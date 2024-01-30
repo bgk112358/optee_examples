@@ -9,3 +9,5 @@ information that used to be here in this git can be found under
 // OP-TEE core maintainers
 
 [optee_examples]: https://optee.readthedocs.io/en/latest/building/gits/optee_examples/optee_examples.html
+
+History
