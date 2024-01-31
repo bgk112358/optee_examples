@@ -30,6 +30,65 @@
 #include <tee_internal_api.h>
 #include <tee_internal_api_extensions.h>
 
+
+typedef enum {
+    RSA_MODULUS             =   0,
+    RSA_PUBLIC_EXPONENT     =   1,
+    RSA_PRIVATE_EXPONENT    =   2,
+    RSA_PRIME1              =   3,
+    RSA_PRIME2              =   4,
+    RSA_EXPONENT1           =   5,
+    RSA_EXPONENT2           =   6,
+    RSA_COEFFICIENT         =   7,
+    RSA_ATTR_END            =   8
+} RSA_ATTR;
+
+const uint32_t op_attr[] = {TEE_ATTR_RSA_MODULUS,
+                            TEE_ATTR_RSA_PUBLIC_EXPONENT,
+                            TEE_ATTR_RSA_PRIVATE_EXPONENT,
+                            TEE_ATTR_RSA_PRIME1,
+                            TEE_ATTR_RSA_PRIME2,
+                            TEE_ATTR_RSA_EXPONENT1,
+                            TEE_ATTR_RSA_EXPONENT2,
+                            TEE_ATTR_RSA_COEFFICIENT
+};
+
+typedef struct {
+    uint32_t len[RSA_ATTR_END];
+    uint8_t* data[RSA_ATTR_END];
+} KEY_ATTR;
+
+#define DEF_TEE_ATTR(idx) \
+{ \
+    switch(idx) \
+    { \
+    case 0: \
+        TEE_ATTR_RSA_MODULUS; \
+        break; \
+    case 1: \
+        TEE_ATTR_RSA_PUBLIC_EXPONENT; \
+        break; \
+    case 2: \
+        TEE_ATTR_RSA_PRIVATE_EXPONENT; \
+        break; \
+    case 3: \
+        TEE_ATTR_RSA_PRIME1; \
+        break; \
+    case 4: \
+        TEE_ATTR_RSA_PRIME2; \
+        break; \
+    case 5: \
+        TEE_ATTR_RSA_EXPONENT1; \
+        break; \
+    case 6: \
+        TEE_ATTR_RSA_EXPONENT2; \
+        break; \
+    case 7: \
+        TEE_ATTR_RSA_COEFFICIENT; \
+        break; \
+    } \
+}
+
 static TEE_Result delete_object(uint32_t param_types, TEE_Param params[4])
 {
 	const uint32_t exp_param_types =
@@ -407,7 +466,7 @@ static TEE_Result secure_cmd_gen_key(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
         IMSG("[bxq] secure_cmd_gen_key 2");
         key_size = params[1].value.a;
 
-        IMSG("[bxq] secure_cmd_gen_key 3");
+        IMSG("[bxq] secure_cmd_gen_key 3, key_size = %d", key_size);
         res = TEE_AllocateTransientObject(key_type, key_size, &key_pair);
         if (res) {
             EMSG("TEE_AllocateTransientObject(%#" PRIx32 ", %" PRId32 "): %#" PRIx32, key_type, key_size, res);
@@ -423,24 +482,93 @@ static TEE_Result secure_cmd_gen_key(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
             return res;
         }
 
+        KEY_ATTR key_attr;
+        uint32_t buff_len = 0;
+        uint32_t buff_head_len = sizeof(uint32_t) * RSA_ATTR_END;
+
         IMSG("[bxq] secure_cmd_gen_key 5");
-        res = TEE_WriteObjectData(object, &key_pair, sizeof(key_pair));
+        for (size_t i = 0; i < RSA_ATTR_END; i++) {
+            IMSG("[bxq] secure_cmd_gen_key 5.1.%d", i);
+            res = TEE_GetObjectBufferAttribute(key_pair, TEE_ATTR_RSA_MODULUS, NULL, &(key_attr.len[i]));
+            // res = TEE_GetObjectBufferAttribute(key_pair, op_attr[i], NULL, &(key_attr.len[i]));
+            if(res != TEE_ERROR_SHORT_BUFFER){
+                EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
+                return res;
+            }
+
+            IMSG("[bxq] secure_cmd_gen_key 5.2.%d,  key_attr.len[%d] = %d", i, i, key_attr.len[i]);
+            key_attr.data[i] = TEE_Malloc(key_attr.len[i], 0);
+            if (!key_slot_buf) {
+                EMSG("TEE_Malloc() fail.\n");
+                return TEE_ERROR_OUT_OF_MEMORY;
+                return res;
+            }
+
+            IMSG("[bxq] secure_cmd_gen_key 5.3.%d, key_attr.data[%d] = 0x%02x", i, i, key_attr.data[i]);
+            res = TEE_GetObjectBufferAttribute(key_pair, op_attr[i], key_attr.data[i], &(key_attr.len[i]));
+            if(TEE_SUCCESS != res){
+                EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
+                return res;
+            }
+            buff_len += key_attr.len[i];
+            IMSG("[bxq] secure_cmd_gen_key 5.4.%d, key_attr.len[%d] = %d", i, i, key_attr.len[i]);
+
+            IMSG_RAW("[bxq] key_attr.data[%d]: ", i);
+            for (size_t j = 0; j < key_attr.len[i]; j++) {
+                IMSG_RAW("0x%02x ", *(key_attr.data[i] + j));
+            }
+            IMSG("end");
+        }
+        TEE_FreeTransientObject(key_pair);
+
+        IMSG("[bxq] secure_cmd_gen_key 6, buff_head_len = %d", buff_head_len);
+        buff_len += buff_head_len;
+        uint8_t *buff = TEE_Malloc(buff_len, 0);
+        if (!buff) {
+            return TEE_ERROR_OUT_OF_MEMORY;
+        }
+
+        IMSG("[bxq] secure_cmd_gen_key 7, buff_len = %d", buff_len);
+        TEE_MemMove(buff, &key_attr, buff_head_len);
+        IMSG("[bxq] secure_cmd_gen_key 8, key_attr.data[0] = 0x%02x", key_attr.data[0]);
+        TEE_MemMove(buff + buff_head_len, key_attr.data[0], key_attr.len[0]);
+        IMSG("[bxq] secure_cmd_gen_key 9");
+        TEE_Free(key_attr.data[0]);
+        IMSG("[bxq] secure_cmd_gen_key 10");
+        uint8_t *p = buff + buff_head_len;
+        for (size_t i = 1; i < RSA_ATTR_END; i++) {
+            IMSG("[bxq] secure_cmd_gen_key 10.1.%d", i);
+            p += key_attr.len[i - 1];
+            IMSG("[bxq] secure_cmd_gen_key 10.2.%d, p = 0x%02x, len[%d] = %d, len[%d] = %d", i, p, i - 1, key_attr.len[i - 1], i, key_attr.len[i]);
+            TEE_MemMove(p, key_attr.data[i], key_attr.len[i]);
+            TEE_Free(key_attr.data[i]);
+        }
+
+        IMSG_RAW("[bxq] key_attr: ");
+        for (size_t j = 0; j < buff_len; j++) {
+            IMSG_RAW("0x%02x ", *(buff + j));
+        }
+        IMSG("end");
+
+        IMSG("[bxq] secure_cmd_gen_key 11");
+        res = TEE_WriteObjectData(object, buff, buff_len);
         if (res != TEE_SUCCESS) {
             EMSG("TEE_WriteObjectData failed 0x%08x", res);
             TEE_CloseAndDeletePersistentObject1(object);
         } else {
-            IMSG("[bxq] secure_cmd_gen_key 6");
+            IMSG("[bxq] secure_cmd_gen_key 12");
             TEE_CloseObject(object);
         }
-        IMSG("[bxq] secure_cmd_gen_key 7");
-        TEE_FreeTransientObject(key_pair);
+
+        TEE_Free(buff);
+        IMSG("[bxq] secure_cmd_gen_key 13");
     } else {
-        IMSG("[bxq] secure_cmd_gen_key 8");
+        IMSG("[bxq] secure_cmd_gen_key 14");
         TEE_CloseObject(object);
         TEE_Free(key_slot_buf);
     }
 
-	IMSG("[bxq] secure_cmd_gen_key 9");
+	IMSG("[bxq] secure_cmd_gen_key 15");
 	return res;
 }
 
