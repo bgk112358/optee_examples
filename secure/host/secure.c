@@ -359,37 +359,37 @@ int main(int argc, char *argv[])
 	if (res)
 		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_GEN_KEY)");
 
-	// memset(&op, 0, sizeof(op));
-	// op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
-	// 								 TEEC_MEMREF_TEMP_INPUT,
-	// 								 TEEC_MEMREF_TEMP_OUTPUT,
-	// 								 TEEC_NONE);
-	// op.params[0].tmpref.buffer = key_slot;
-	// op.params[0].tmpref.size = sizeof(key_slot);
-	// op.params[1].tmpref.buffer = inbuf;
-	// op.params[1].tmpref.size = inbuf_len;
-	// printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
-	// res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_ENC, &op, &eo);
-	// if (eo != TEEC_ORIGIN_TRUSTED_APP || res != TEEC_ERROR_SHORT_BUFFER)
-	// 	teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
+	memset(&op, 0, sizeof(op));
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+									 TEEC_MEMREF_TEMP_INPUT,
+									 TEEC_MEMREF_TEMP_OUTPUT,
+									 TEEC_NONE);
+	op.params[0].tmpref.buffer = key_slot;
+	op.params[0].tmpref.size = sizeof(key_slot);
+	op.params[1].tmpref.buffer = inbuf;
+	op.params[1].tmpref.size = inbuf_len;
+	printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+	res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_ENC, &op, &eo);
+	if (eo != TEEC_ORIGIN_TRUSTED_APP || res != TEEC_ERROR_SHORT_BUFFER)
+		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
 
-	// printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
-	// op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
-	// if (!op.params[2].tmpref.buffer) {
-	// 	err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
-	// }
+	printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+	op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
+	if (!op.params[2].tmpref.buffer) {
+		err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
+	}
 
-	// res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_ENC, &op, &eo);
-	// if (res) {
-	// 	teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
-	// }
+	res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_ENC, &op, &eo);
+	if (res) {
+		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
+	}
 
-	// printf("[bxq] %s: ", key_slot);
-	// for (n = 0; n < op.params[2].tmpref.size; n++)
-	// 	printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
-	// printf("\n");
-	// write_file((uint8_t *)op.params[2].tmpref.buffer, op.params[2].tmpref.size);
+	printf("[bxq] %s: ", key_slot);
+	for (n = 0; n < op.params[2].tmpref.size; n++)
+		printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
+	printf("\n");
+	write_file((uint8_t *)op.params[2].tmpref.buffer, op.params[2].tmpref.size);
 
-	// free(op.params[2].tmpref.buffer);
+	free(op.params[2].tmpref.buffer);
 	return 0;
 }
