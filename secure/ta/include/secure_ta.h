@@ -77,9 +77,16 @@
 
 /*
  * in	params[0].value.a key slot
- * out	params[1].memref  output
+ * in	params[1].memref  input
+ * out	params[2].memref  output
  */
 #define TA_SECURE_CMD_RSA_ENC		6
 
+/*
+ * in	params[0].value.a key slot
+ * in	params[1].memref  input
+ * out	params[2].memref  output
+ */
+#define TA_SECURE_CMD_RSA_DEC		7
 
 #endif /* __SECURE_H__ */

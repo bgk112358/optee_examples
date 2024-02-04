@@ -778,7 +778,231 @@ exit:
 	return res;
 }
 
+TEE_Result secure_cmd_rsa_dec(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS])
+{
+	const uint32_t exp_param_types =
+		TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+				        TEE_PARAM_TYPE_MEMREF_INPUT,
+				        TEE_PARAM_TYPE_MEMREF_OUTPUT,
+				        TEE_PARAM_TYPE_NONE);
+	TEE_ObjectHandle object;
+	TEE_ObjectInfo object_info;
+	TEE_Result res;
+	uint32_t read_bytes;
+	char *key_slot_buf;
+	size_t key_slot_size;
+    uint8_t *inbuf;
+	uint32_t inbuf_len;
+	uint8_t *outbuf;
+	uint32_t outbuf_len;
+	uint8_t *store_buf;
+	uint32_t store_buf_len;
+    TEE_Attribute attrs[8];    // modulus | pub expo
+    TEE_Attribute prikey[3];    // modulus | pub expo | priv expo
+    TEE_OperationHandle operation;
+    TEE_ObjectInfo key_info;
+    TEE_ObjectHandle key_pair;
+    const uint32_t alg = TEE_ALG_RSAES_PKCS1_V1_5;
 
+    IMSG("[bxq] secure_cmd_rsa_dec 1");
+	/*
+	 * Safely get the invocation parameters
+	 */
+	if (param_types != exp_param_types)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	key_slot_size = params[0].memref.size;
+	key_slot_buf = TEE_Malloc(key_slot_size, 0);
+	if (!key_slot_buf)
+		return TEE_ERROR_OUT_OF_MEMORY;
+
+    IMSG("[bxq] secure_cmd_rsa_dec 2");
+	TEE_MemMove(key_slot_buf, params[0].memref.buffer, key_slot_size);
+
+    IMSG("[bxq] secure_cmd_rsa_dec 3");
+	/*
+	 * Check the object exist and can be dumped into output buffer
+	 * then dump it.
+	 */
+	res = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+					key_slot_buf, key_slot_size,
+					TEE_DATA_FLAG_ACCESS_READ |
+					TEE_DATA_FLAG_SHARE_READ,
+					&object);
+	if (res != TEE_SUCCESS) {
+		EMSG("Failed to open persistent object, res=0x%08x", res);
+		TEE_Free(key_slot_buf);
+		// TEE_Free(private_key_data);
+		return res;
+	}
+
+    IMSG("[bxq] secure_cmd_rsa_dec 4");
+
+    KEY_ATTR key_attr;
+	res = TEE_ReadObjectData(object, &key_attr, sizeof(key_attr), &read_bytes);
+	if (res != TEE_SUCCESS) {
+		EMSG("TEE_ReadObjectData failed 0x%08x, read %" PRIu32 " over %u", res, read_bytes, sizeof(key_attr));
+		goto exit;
+	}
+
+    IMSG("[bxq] secure_cmd_rsa_dec 5, sizeof(key_attr) = %d, read_bytes = %d", sizeof(key_attr), read_bytes);
+    store_buf_len = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);
+    for (size_t i = 0; i < RSA_ATTR_END; i++) {
+        store_buf_len += key_attr.len[i];
+    }
+    
+	store_buf = TEE_Malloc(store_buf_len, 0);
+	if (!store_buf)
+		return TEE_ERROR_OUT_OF_MEMORY;
+
+    res = TEE_SeekObjectData(object, 0, TEE_DATA_SEEK_SET);
+    if (res != TEE_SUCCESS) {
+		EMSG("TEE_SeekObjectData failed 0x%08x", res);
+		goto exit;
+	}
+
+    IMSG("[bxq] secure_cmd_rsa_dec 6, store_buf_len = %d", store_buf_len);
+    res = TEE_ReadObjectData(object, store_buf, store_buf_len, &read_bytes);
+	if (res != TEE_SUCCESS) {
+		EMSG("TEE_ReadObjectData failed 0x%08x, read %" PRIu32 " over %u", res, read_bytes, store_buf_len);
+		goto exit;
+	}
+
+    // IMSG("[bxq] secure_cmd_rsa_dec 6.1 persistent, store_buf_len = %d, read_bytes = %d", store_buf_len, read_bytes);
+    // for (size_t i = 0; i < read_bytes; i++) {
+    //     IMSG("0x%02x ", *(store_buf + i));
+    // }
+    // IMSG("[bxq] secure_cmd_rsa_dec 6.2 end: ");
+
+    IMSG("[bxq] secure_cmd_rsa_dec 7, store_buf_len = %d, read_bytes = %d", store_buf_len, read_bytes);
+    uint32_t buff_head_len = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);;
+    uint8_t *p = store_buf + buff_head_len;
+    key_attr.data[0] = p;
+    for (size_t i = 0; i < RSA_ATTR_END - 1; i++) {
+        IMSG("[bxq] secure_cmd_rsa_dec 7.1.%d, len[%d] = %d", i, i, key_attr.len[i]);
+        p += key_attr.len[i];
+        key_attr.data[i + 1] = p;
+        IMSG("[bxq] secure_cmd_rsa_dec 7.2.%d, p = 0x%02x", i, p);
+    }
+
+    IMSG("[bxq] secure_cmd_rsa_dec 8");
+
+    IMSG("[bxq] secure_cmd_rsa_dec 9");
+    TEE_InitRefAttribute(&attrs[0], TEE_ATTR_RSA_MODULUS, key_attr.data[RSA_MODULUS], key_attr.len[RSA_MODULUS]);
+    TEE_InitRefAttribute(&attrs[1], TEE_ATTR_RSA_PUBLIC_EXPONENT, key_attr.data[RSA_PUBLIC_EXPONENT], key_attr.len[RSA_PUBLIC_EXPONENT]);
+    TEE_InitRefAttribute(&attrs[2], TEE_ATTR_RSA_PRIVATE_EXPONENT, key_attr.data[RSA_PRIVATE_EXPONENT], key_attr.len[RSA_PRIVATE_EXPONENT]);
+
+    TEE_InitRefAttribute(&attrs[3], TEE_ATTR_RSA_PRIME1, key_attr.data[RSA_PRIME1], key_attr.len[RSA_PRIME1]);
+    TEE_InitRefAttribute(&attrs[4], TEE_ATTR_RSA_PRIME2, key_attr.data[RSA_PRIME2], key_attr.len[RSA_PRIME2]);
+    TEE_InitRefAttribute(&attrs[5], TEE_ATTR_RSA_EXPONENT1, key_attr.data[RSA_EXPONENT1], key_attr.len[RSA_EXPONENT1]);
+    TEE_InitRefAttribute(&attrs[6], TEE_ATTR_RSA_EXPONENT2, key_attr.data[RSA_EXPONENT2], key_attr.len[RSA_EXPONENT2]);
+    TEE_InitRefAttribute(&attrs[7], TEE_ATTR_RSA_COEFFICIENT, key_attr.data[RSA_COEFFICIENT], key_attr.len[RSA_COEFFICIENT]);
+
+    IMSG("[bxq] secure_cmd_rsa_dec 10, key_attr.params[KEY_SIZE] = %d", key_attr.params[KEY_SIZE]);
+    res = TEE_AllocateTransientObject(TEE_TYPE_RSA_KEYPAIR, key_attr.params[KEY_SIZE], &key_pair);
+    if(TEE_SUCCESS != res) {
+        EMSG("TEE_AllocateTransientObject() fail. res = %x.\n", res);
+        goto exit;
+    }
+
+    IMSG("[bxq] secure_cmd_rsa_dec 11");
+    res = TEE_PopulateTransientObject(key_pair, attrs, 8);
+    if(TEE_SUCCESS != res){
+        EMSG("TEE_PopulateTransientObject() fail. res = %x.\n", res);
+        goto exit;  
+    }
+
+    uint32_t p_len;
+    for (size_t i = 0; i < RSA_ATTR_END; i++) {
+        IMSG("[bxq] secure_cmd_rsa_dec 11.1.%d", i);
+        res = TEE_GetObjectBufferAttribute(key_pair, op_attr[i], NULL, &p_len);
+        if(res != TEE_ERROR_SHORT_BUFFER){
+            EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
+            return res;
+        }
+
+        IMSG("[bxq] secure_cmd_rsa_dec 11.2.%d,  p_len[%d] = %d", i, i, p_len);
+        p = TEE_Malloc(p_len, 0);
+        if (!key_slot_buf) {
+            EMSG("TEE_Malloc() fail.\n");
+            return TEE_ERROR_OUT_OF_MEMORY;
+            return res;
+        }
+
+        IMSG("[bxq] secure_cmd_rsa_dec 11.3.%d, p[%d] = 0x%02x", i, i, *p);
+        res = TEE_GetObjectBufferAttribute(key_pair, op_attr[i], p, &p_len);
+        if(TEE_SUCCESS != res){
+            EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
+            return res;
+        }
+
+        IMSG("[bxq] secure_cmd_rsa_dec 11.4.%d, p_len[%d] = %d", i, i, p_len);
+
+        IMSG_RAW("[bxq] p[%d]: ", i);
+        for (size_t j = 0; j < p_len; j++) {
+            IMSG_RAW("0x%02x ", *(p + j));
+        }
+        IMSG("end");
+
+        TEE_Free(p);
+    }
+
+    IMSG("[bxq] secure_cmd_rsa_dec 12");
+    res = TEE_GetObjectInfo1(key_pair, &key_info);
+	if (res) {
+		EMSG("TEE_GetObjectInfo1: %#" PRIx32, res);
+		return res;
+	}
+
+    IMSG("[bxq] secure_cmd_rsa_dec 13, key_info.keySize = %d", key_info.keySize);
+    res = TEE_AllocateOperation(&operation, TEE_ALG_RSAES_PKCS1_V1_5, TEE_MODE_DECRYPT, key_info.keySize);
+    if(TEE_SUCCESS != res){
+        EMSG("TEE_AllocateOperation() fail. res = %x.\n", res);
+        goto exit;
+    }
+
+    IMSG("[bxq] secure_cmd_rsa_dec 14");
+    res = TEE_SetOperationKey(operation, key_pair);
+    if(TEE_SUCCESS != res){
+        EMSG("TEE_SetOperationKey() fail. res = %x.\n", res);
+        goto exit;
+    }
+
+    inbuf = params[1].memref.buffer;
+	inbuf_len = params[1].memref.size;
+	outbuf = params[2].memref.buffer;
+	outbuf_len = params[2].memref.size;
+
+    IMSG("[bxq] secure_cmd_rsa_dec 14.1 inbuf:");
+    for (size_t i = 0; i < inbuf_len; i++) {
+        IMSG("0x%02x ", *(inbuf + i));
+    }
+    IMSG("[bxq] secure_cmd_rsa_dec 14.2 end");
+    
+
+    IMSG("[bxq] secure_cmd_rsa_dec 15");
+    res = TEE_AsymmetricDecrypt(operation, NULL, 0, inbuf, inbuf_len, outbuf, &outbuf_len);
+    if(TEE_SUCCESS != res){
+        EMSG("TEE_AsymmetricEncrypt() fail. res = %x.\n", res);
+    } else if (res != TEE_ERROR_SHORT_BUFFER) {
+        IMSG("[bxq] secure_cmd_rsa_dec 15.1, outbuf_len = %d, outbuf:", outbuf_len);
+        for (size_t i = 0; i < outbuf_len; i++) {
+            IMSG("0x%02x ", *(outbuf + i));
+        }
+        IMSG("[bxq] secure_cmd_rsa_dec 15.2 end");
+    }
+
+    /* Return the number of byte effectively filled */
+	params[2].memref.size = outbuf_len;
+
+    IMSG("[bxq] secure_cmd_rsa_dec 16");
+exit:
+    IMSG("[bxq] secure_cmd_rsa_dec 17");
+	TEE_CloseObject(object);
+	TEE_Free(key_slot_buf);
+	TEE_FreeOperation(operation);
+	return res;
+}
 
 
 TEE_Result TA_CreateEntryPoint(void)
@@ -846,6 +1070,9 @@ TEE_Result TA_InvokeCommandEntryPoint(void __unused *session,
 	case TA_SECURE_CMD_RSA_ENC:
 		IMSG("Command ID: TA_SECURE_CMD_RSA_ENC");
 		return secure_cmd_rsa_enc(param_types, params);	
+	case TA_SECURE_CMD_RSA_DEC:
+		IMSG("Command ID: TA_SECURE_CMD_RSA_DEC");
+		return secure_cmd_rsa_dec(param_types, params);	
 	default:
 		EMSG("Command ID 0x%x is not supported", command);
 		return TEE_ERROR_NOT_SUPPORTED;

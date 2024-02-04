@@ -322,6 +322,24 @@ void write_file(uint8_t *buf, int32_t len)
 	close(fd);
 }
 
+int32_t read_file(uint8_t *buf, int32_t *len)
+{
+	int32_t fd;
+	fd = open("/tmp/key.der", O_RDONLY);
+	if (fd <= 0) {
+		printf("open /tmp/key.der err\n");
+	}
+
+	int32_t nread = read(fd, buf, *len);
+	if (nread > 0) {
+		printf("read /tmp/key.der success\n");
+	} else {
+		printf("read /tmp/key.der err\n");
+	}
+	close(fd);
+	return nread;
+}
+
 int main(int argc, char *argv[])
 {
 	TEEC_Result res;
@@ -389,6 +407,48 @@ int main(int argc, char *argv[])
 		printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
 	printf("\n");
 	write_file((uint8_t *)op.params[2].tmpref.buffer, op.params[2].tmpref.size);
+	free(op.params[2].tmpref.buffer);
+	op.params[2].tmpref.size = 0;
+
+	// dec
+	uint8_t enc_data[3072];
+	int32_t enc_len = 3072;
+	enc_len = read_file(enc_data, &enc_len);
+
+	op.params[0].tmpref.buffer = key_slot;
+	op.params[0].tmpref.size = sizeof(key_slot);
+	op.params[1].tmpref.buffer = enc_data;
+	op.params[1].tmpref.size = enc_len;
+
+	printf("[bxq] read enc_data, enc_len = %d: ", enc_len);
+	for (n = 0; n < op.params[1].tmpref.size; n++)
+		printf("%02x ", ((uint8_t *)op.params[1].tmpref.buffer)[n]);
+	printf("\n");
+
+	printf("[bxq] 2 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+	res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_DEC, &op, &eo);
+	if (eo != TEEC_ORIGIN_TRUSTED_APP || res != TEEC_ERROR_SHORT_BUFFER)
+		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
+
+	printf("[bxq] 2 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+	op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
+	if (!op.params[2].tmpref.buffer) {
+		err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
+	}
+
+	res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_DEC, &op, &eo);
+	if (res) {
+		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
+	}
+
+	printf("[bxq] dec_data %s: ", key_slot);
+	for (n = 0; n < op.params[2].tmpref.size; n++)
+		printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
+	printf("\n");
+	printf("[bxq] dec_data %s: ", key_slot);
+	for (n = 0; n < op.params[2].tmpref.size; n++)
+		printf("%c", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
+	printf("\n");
 
 	free(op.params[2].tmpref.buffer);
 	return 0;
