@@ -89,4 +89,7 @@
  */
 #define TA_SECURE_CMD_RSA_DEC		7
 
+
+#define TA_SECURE_CMD_GEN_AES_KEY	8
+
 #endif /* __SECURE_H__ */
