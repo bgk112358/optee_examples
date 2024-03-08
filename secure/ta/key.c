@@ -44,56 +44,50 @@ typedef struct {
 
 
 
-TEE_Result Key_Gen(const uint32_t keyType, uint32_t keySize, TEE_ObjectHandle *keyPair)
+TEE_Result KeyGen(const uint32_t keyType, KEY_PARAM keyParam, TEE_ObjectHandle *keyPair)
 {
     TEE_Result res;
     TEE_ObjectHandle key;
 
-    IMSG("[bxq] Key_Gen 1, keySize = %d", keySize);
-    res = TEE_AllocateTransientObject(keyType, keySize, &key);
+    IMSG("[bxq] KeyGen 1, keySize = %d", keyParam.keySize);
+    res = TEE_AllocateTransientObject(keyType, keyParam.keySize, &key);
     if (res) {
-        EMSG("TEE_AllocateTransientObject(%#" PRIx32 ", %" PRId32 "): %#" PRIx32, keyType, keySize, res);
+        EMSG("TEE_AllocateTransientObject(%#" PRIx32 ", %" PRId32 "): %#" PRIx32, keyType, keyParam.keySize, res);
         return res;
     }
 
-    IMSG("[bxq] Key_Gen 2");
-    res = TEE_GenerateKey(key, keySize, NULL, 0);
+    IMSG("[bxq] KeyGen 2");
+    res = TEE_GenerateKey(key, keyParam.keySize, NULL, 0);
     if (res != TEE_SUCCESS) {
-        EMSG("TEE_GenerateKey(%" PRId32 "): %#" PRIx32, keySize, res);
+        EMSG("TEE_GenerateKey(%" PRId32 "): %#" PRIx32, keyParam.keySize, res);
         return res;
     }
-
     *keyPair = key;
 
-    const uint8_t id[] = "key_001";
-    res = Key_Store(id, sizeof(id), key);
+    res = KeyStore(keyParam.id, keyParam.idLen, key);
     if (res != TEE_SUCCESS) {
-        EMSG("Key_Store err, id = %s, res = 0x%x ", id, res);
+        EMSG("Key_Store err, id = %s, res = 0x%x ", keyParam.id, res);
         return res;
     }
 
-    IMSG("[bxq] Key_Gen 3");
+    IMSG("[bxq] KeyGen 3");
 
     TEE_ObjectHandle keyRestore;
-
-    IMSG("[bxq] Key_Gen 4, keyRestore = 0x%02x", keyRestore);
-    res = Key_Restore(id, sizeof(id), &keyRestore);
+    IMSG("[bxq] KeyGen 4, keyRestore = 0x%02x", keyRestore);
+    res = KeyRestore(keyParam.id, keyParam.idLen, &keyRestore);
     if (res != TEE_SUCCESS) {
-        EMSG("Key_Store err, id = %s, res = 0x%x ", id, res);
+        EMSG("Key_Store err, id = %s, res = 0x%x ", keyParam.id, res);
         return res;
     }
 
-    
-
-    IMSG("[bxq] Key_Gen 5, keyRestore = 0x%02x", keyRestore);
+    IMSG("[bxq] KeyGen 5, keyRestore = 0x%02x", keyRestore);
 
     return TEE_SUCCESS;
 }
 
 
-TEE_Result Key_Store(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle keyPair)
+TEE_Result KeyStore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle keyPair)
 {
-
     TEE_Result res;
     TEE_ObjectInfo keyInfo;
     KEY_ATTR key_attr;
@@ -191,7 +185,7 @@ TEE_Result Key_Store(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle k
 
 
 
-TEE_Result Key_Restore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle *keyPair)
+TEE_Result KeyRestore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle *keyPair)
 {
     TEE_Result res;
     uint8_t *keyData;
@@ -284,5 +278,34 @@ TEE_Result Key_Restore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle
     }
     // test end
 
+    return TEE_SUCCESS;
+}
+
+TEE_Result KeyRestoreValue(const uint8_t *keyID, uint32_t keyIDLen, void *buffer, uint32_t *bufferLen)
+{
+    TEE_Result res;
+    uint8_t *keyData;
+    uint32_t keyDataLen;
+    uint32_t code;
+    KEY_ATTR key_attr;
+
+    IMSG("[bxq] KeyRestoreValue 1");
+    res = Store_ReadKey(keyID, keyIDLen, &keyData, &keyDataLen, &code);
+
+    IMSG("[bxq] KeyRestoreValue 2, keyData = 0x%p, keyDataLen = %d", keyData, keyDataLen);
+    uint32_t bufHeadLen = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);
+    uint8_t *p = keyData + bufHeadLen;
+    TEE_MemMove(&key_attr, keyData, bufHeadLen);
+
+    IMSG("[bxq] KeyRestoreValue 3, p = %p, bufHeadLen = %d", p, bufHeadLen);
+    key_attr.data[0] = p;
+    for (size_t i = 0; i < RSA_ATTR_END - 1; i++) {
+        IMSG("[bxq] KeyRestoreValue 3.1.%d, len[%d] = %d", i, i, key_attr.len[i]);
+        p += key_attr.len[i];
+        key_attr.data[i + 1] = p;
+        IMSG("[bxq] KeyRestoreValue 3.2.%d, p = 0x%02x", i, p);
+    }
+
+    // 内存返回不合理，后续修改再完成
     return TEE_SUCCESS;
 }

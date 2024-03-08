@@ -56,12 +56,12 @@
  * param[2] unused
  * param[3] unused
  */
-#define TA_SECURE_CMD_DELETE		2
+#define TA_SECURE_CMD_DELETE        2
 
 /*
  * in	params[0].value.a key size
  */
-#define TA_ACIPHER_CMD_GEN_KEY		3
+#define TA_ACIPHER_CMD_GEN_KEY          3
 
 /*
  * in	params[1].memref  input
@@ -70,26 +70,35 @@
 #define TA_ACIPHER_CMD_ENCRYPT		4
 
 /*
- * in	params[0].value.a key slot
- * in	params[0].value.b key size
+ * in	params[0].memref.buffer key id
+ * in	params[0].memref.size   key id size
+ * in	params[1].value.a       key length
  */
-#define TA_SECURE_CMD_GEN_KEY		5
+#define TA_CMD_KEY_RSA_GEN		5
 
 /*
- * in	params[0].value.a key slot
+ * in	params[0].memref.buffer key id
+ * in	params[0].memref.size   key id size
+ * out	params[1].memref.buffer key attr value
+ * out	params[1].memref.size   key attr value size
+ */
+#define TA_CMD_KEY_BUFFER_GET		6
+
+/*
+ * in	params[0].memref  key id
  * in	params[1].memref  input
  * out	params[2].memref  output
  */
-#define TA_SECURE_CMD_RSA_ENC		6
+#define TA_CMD_CRYPTO_RSA_ENC		7
 
 /*
- * in	params[0].value.a key slot
+ * in	params[0].memref  key slot
  * in	params[1].memref  input
  * out	params[2].memref  output
  */
-#define TA_SECURE_CMD_RSA_DEC		7
+#define TA_CMD_CRYPTO_RSA_DEC		8
 
 
-#define TA_SECURE_CMD_GEN_AES_KEY	8
+#define TA_SECURE_CMD_GEN_AES_KEY	9
 
 #endif /* __SECURE_H__ */

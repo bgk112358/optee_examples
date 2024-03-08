@@ -8,7 +8,7 @@ typedef struct buffer {
     uint32_t len;
 } BUFFER;
 
-TEE_Result Rsa_Encode(TEE_ObjectHandle keyPair, BUFFER in, BUFFER *out);
-
+TEE_Result RsaEncode(TEE_ObjectHandle keyPair, BUFFER in, BUFFER *out);
+TEE_Result RsaDecode(TEE_ObjectHandle keyPair, BUFFER in, BUFFER *out);
 
 #endif /* __RSA_H__ */

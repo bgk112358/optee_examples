@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <secure_api.h>
 
 /* OP-TEE TEE client API (built by optee_client) */
 #include <tee_client_api.h>
@@ -21,6 +22,13 @@
 /* TA API: UUID and command IDs */
 #include <secure_ta.h>
 
+
+typedef struct _tee_hdl {
+    TEEC_Context ctx;
+	TEEC_Session sess;
+} TEE_HDL;
+
+static TEE_HDL teeHdl;
 
 static void usage(int argc, char *argv[])
 {
@@ -98,127 +106,195 @@ int32_t read_file(uint8_t *buf, int32_t *len)
 	return nread;
 }
 
-
-
-
-
-int main(int argc, char *argv[])
+int32_t KeyAesGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
 {
-	TEEC_Result res;
-	uint32_t eo;
-	TEEC_Context ctx;
-	TEEC_Session sess;
-	TEEC_Operation op;
-	size_t key_size;
-	uint8_t key_slot[] = "KEY#RSA2048#01";
+    return 0;
+}
+
+int32_t KeyRsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_VALUE_INPUT,
+                                     TEEC_NONE,
+                                     TEEC_NONE);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].value.a = keyLen;
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_RSA_GEN, &op, &eo);
+    return 0;
+}
+
+int32_t KeyBufferGetByID(const uint8_t *id, uint32_t idLen, void *buffer, uint32_t *size)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_OUTPUT,
+                                     TEEC_NONE,
+                                     TEEC_NONE);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_BUFFER_GET, &op, &eo);
+    return 0;
+}
+
+int32_t CryptoRsaEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_OUTPUT,
+                                     TEEC_NONE);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].tmpref.buffer = inbuf.data;
+    op.params[1].tmpref.size = inbuf.len;
+    op.params[2].tmpref.buffer = NULL;
+    op.params[2].tmpref.size = 0;
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_RSA_ENC, &op, &eo);
+    if (eo != TEEC_ORIGIN_TRUSTED_APP || res != TEEC_ERROR_SHORT_BUFFER) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_ENC)");
+    }
+
+    printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+    op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
+    if (!op.params[2].tmpref.buffer) {
+        err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
+    }
+
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_RSA_ENC, &op, &eo);
+    if (res) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_ENC)");
+    }
+
+    printf("[bxq] %s: ", id);
+    for (uint32_t n = 0; n < op.params[2].tmpref.size; n++) {
+        printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
+    }
+    printf("\n");
+    write_file((uint8_t *)op.params[2].tmpref.buffer, op.params[2].tmpref.size);
+
+    outbuf->data = op.params[2].tmpref.buffer;
+    outbuf->len = op.params[2].tmpref.size;
+    
+    printf("CryptoRsaEnc end\n");
+    return 0;
+}
+
+int32_t CryptoRsaDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_OUTPUT,
+                                     TEEC_NONE);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].tmpref.buffer = inbuf.data;
+    op.params[1].tmpref.size = inbuf.len;
+    op.params[2].tmpref.buffer = NULL;
+    op.params[2].tmpref.size = 0;
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_RSA_DEC, &op, &eo);
+    if (eo != TEEC_ORIGIN_TRUSTED_APP || res != TEEC_ERROR_SHORT_BUFFER) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_DEC)");
+    }
+
+    printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+    op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
+    if (!op.params[2].tmpref.buffer) {
+        err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
+    }
+
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_RSA_DEC, &op, &eo);
+    if (res) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_DEC)");
+    }
+
+    printf("[bxq] dec_data %s: ", id);
+    for (uint32_t n = 0; n < op.params[2].tmpref.size; n++) {
+        printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
+    }
+    printf("\n");
+    printf("[bxq] dec_data %s: ", id);
+    for (uint32_t n = 0; n < op.params[2].tmpref.size; n++)
+        printf("%c", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
+    printf("\n");
+
+    // free(op.params[2].tmpref.buffer);
+    outbuf->data = op.params[2].tmpref.buffer;
+    outbuf->len = op.params[2].tmpref.size;
+    
+    return 0;
+}
+
+
+int32_t TeecInit()
+{
+    TEEC_Result res;
+    const TEEC_UUID uuid = TA_SECURE_UUID;
+
+    res = TEEC_InitializeContext(NULL, &teeHdl.ctx);
+    if (res) {
+        errx(1, "TEEC_InitializeContext(NULL, x): %#" PRIx32, res);
+    }
+
+    uint32_t eo;
+    res = TEEC_OpenSession(&teeHdl.ctx, &teeHdl.sess, &uuid, TEEC_LOGIN_PUBLIC, NULL, NULL, &eo);
+    if (res) {
+        teec_err(res, eo, "TEEC_OpenSession(TEEC_LOGIN_PUBLIC)");
+    }
+
+    return 0;
+}
+
+main(int argc, char *argv[])
+{
 	void *inbuf;
 	size_t inbuf_len;
-	size_t n;
-	const TEEC_UUID uuid = TA_SECURE_UUID;
-
+    size_t key_size;
 	get_args(argc, argv, &key_size, &inbuf, &inbuf_len);
 
-	res = TEEC_InitializeContext(NULL, &ctx);
-	if (res)
-		errx(1, "TEEC_InitializeContext(NULL, x): %#" PRIx32, res);
+    int32_t res = TeecInit();
 
-	res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL,
-			       NULL, &eo);
-	if (res)
-		teec_err(res, eo, "TEEC_OpenSession(TEEC_LOGIN_PUBLIC)");
+    const uint8_t rsa_key[] = "rsakey01";
+    res = KeyRsaGen(rsa_key, sizeof(rsa_key), key_size);
 
-	memset(&op, 0, sizeof(op));
-	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
-									 TEEC_VALUE_INPUT,
-									 TEEC_NONE,
-									 TEEC_NONE);
-	op.params[0].tmpref.buffer = key_slot;
-	op.params[0].tmpref.size = sizeof(key_slot);
-	op.params[1].value.a = key_size;
-	res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_GEN_KEY, &op, &eo);
-	if (res)
-		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_GEN_KEY)");
-
-// 	memset(&op, 0, sizeof(op));
-// 	op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
-// 									 TEEC_MEMREF_TEMP_INPUT,
-// 									 TEEC_MEMREF_TEMP_OUTPUT,
-// 									 TEEC_NONE);
-// 	op.params[0].tmpref.buffer = key_slot;
-// 	op.params[0].tmpref.size = sizeof(key_slot);
-// 	op.params[1].tmpref.buffer = inbuf;
-// 	op.params[1].tmpref.size = inbuf_len;
-
-// #if 1	// RSA
-
-// 	printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
-// 	res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_ENC, &op, &eo);
-// 	if (eo != TEEC_ORIGIN_TRUSTED_APP || res != TEEC_ERROR_SHORT_BUFFER)
-// 		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
-
-// 	printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
-// 	op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
-// 	if (!op.params[2].tmpref.buffer) {
-// 		err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
-// 	}
-
-// 	res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_ENC, &op, &eo);
-// 	if (res) {
-// 		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
-// 	}
-
-// 	printf("[bxq] %s: ", key_slot);
-// 	for (n = 0; n < op.params[2].tmpref.size; n++)
-// 		printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
-// 	printf("\n");
-// 	write_file((uint8_t *)op.params[2].tmpref.buffer, op.params[2].tmpref.size);
-// 	free(op.params[2].tmpref.buffer);
-// 	op.params[2].tmpref.size = 0;
-
-// 	// dec
-// 	uint8_t enc_data[3072];
-// 	int32_t enc_len = 3072;
-// 	enc_len = read_file(enc_data, &enc_len);
-
-// 	op.params[0].tmpref.buffer = key_slot;
-// 	op.params[0].tmpref.size = sizeof(key_slot);
-// 	op.params[1].tmpref.buffer = enc_data;
-// 	op.params[1].tmpref.size = enc_len;
-
-// 	printf("[bxq] read enc_data, enc_len = %d: ", enc_len);
-// 	for (n = 0; n < op.params[1].tmpref.size; n++)
-// 		printf("%02x ", ((uint8_t *)op.params[1].tmpref.buffer)[n]);
-// 	printf("\n");
-
-// 	printf("[bxq] 2 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
-// 	res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_DEC, &op, &eo);
-// 	if (eo != TEEC_ORIGIN_TRUSTED_APP || res != TEEC_ERROR_SHORT_BUFFER)
-// 		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
-
-// 	printf("[bxq] 2 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
-// 	op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
-// 	if (!op.params[2].tmpref.buffer) {
-// 		err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
-// 	}
-
-// 	res = TEEC_InvokeCommand(&sess, TA_SECURE_CMD_RSA_DEC, &op, &eo);
-// 	if (res) {
-// 		teec_err(res, eo, "TEEC_InvokeCommand(TA_SECURE_CMD_RSA_ENC)");
-// 	}
-
-// 	printf("[bxq] dec_data %s: ", key_slot);
-// 	for (n = 0; n < op.params[2].tmpref.size; n++)
-// 		printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
-// 	printf("\n");
-// 	printf("[bxq] dec_data %s: ", key_slot);
-// 	for (n = 0; n < op.params[2].tmpref.size; n++)
-// 		printf("%c", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
-// 	printf("\n");
-
-// 	free(op.params[2].tmpref.buffer);
-// 	return 0;
-// #else	// AES
+    // RSA_KEY_ATTR_VALUE keyAttrValue;
+    // uint32_t keyAttrValueSize;
+    // res = KeyBufferGetByID(rsa_key, sizeof(rsa_key), (void *)&keyAttrValue, &keyAttrValueSize);
 
 
-// #endif
+    BUFFER in;
+    BUFFER out;
+    BUFFER ori;
+    in.data = inbuf;
+    in.len = inbuf_len;
+    res = CryptoRsaEnc(rsa_key, sizeof(rsa_key), in, &out);
+
+    res = CryptoRsaDec(rsa_key, sizeof(rsa_key), out, &ori);
+
+    printf("[bxq] ori: %s \n", ori.data);
+
+    free(out.data);
+    out.len = 0;
+
+    free(ori.data);
+    ori.len = 0;
+
 }
