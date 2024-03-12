@@ -82,23 +82,48 @@
  * out	params[1].memref.buffer key attr value
  * out	params[1].memref.size   key attr value size
  */
-#define TA_CMD_KEY_BUFFER_GET		6
+#define TA_CMD_KEY_BUFFER_GET       6
 
 /*
  * in	params[0].memref  key id
  * in	params[1].memref  input
  * out	params[2].memref  output
  */
-#define TA_CMD_CRYPTO_RSA_ENC		7
+#define TA_CMD_CRYPTO_RSA_ENC       7
 
 /*
- * in	params[0].memref  key slot
- * in	params[1].memref  input
- * out	params[2].memref  output
- */
-#define TA_CMD_CRYPTO_RSA_DEC		8
+* in	params[0].memref  key slot
+* in	params[1].memref  input
+* out	params[2].memref  output
+*/
+#define TA_CMD_CRYPTO_RSA_DEC       8
 
+/*
+* in	params[0].memref.buffer key id
+* in	params[0].memref.size   key id size
+* in	params[1].value.a       key length
+*/
+#define TA_CMD_KEY_AES_GEN          9
 
-#define TA_SECURE_CMD_GEN_AES_KEY	9
+/*
+* in	params[0].memref.buffer iv name
+* in	params[0].memref.size   iv name size
+* in	params[1].value.a       key length
+*/
+#define TA_CMD_KEY_AES_IV           10
+
+/*
+* in	params[0].memref  key id
+* in	params[1].memref  input
+* out	params[2].memref  output
+*/
+#define TA_CMD_CRYPTO_AES_ENC       11
+
+/*
+* in	params[0].memref  key slot
+* in	params[1].memref  input
+* out	params[2].memref  output
+*/
+#define TA_CMD_CRYPTO_AES_DEC       12
 
 #endif /* __SECURE_H__ */

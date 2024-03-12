@@ -3,3 +3,4 @@ srcs-y += entry.c
 srcs-y += store.c
 srcs-y += key.c
 srcs-y += rsa.c
+srcs-y += aes.c

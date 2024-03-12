@@ -5,6 +5,7 @@
 
 #include <key.h>
 #include <rsa.h>
+#include <aes.h>
 
 
 static TEE_Result cmd_key_rsa_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
@@ -35,6 +36,35 @@ static TEE_Result cmd_key_rsa_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
     IMSG("[bxq] secure_cmd_gen_key 3, keyPair =  0x%02x", keyPair);
 
     return res;
+}
+
+static TEE_Result cmd_key_aes_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+    TEE_ObjectHandle keyPair;
+    KEY_PARAM keyParam;
+
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_VALUE_INPUT,
+                                            TEE_PARAM_TYPE_NONE,
+                                            TEE_PARAM_TYPE_NONE);
+    if (pt != exp_pt) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    IMSG("[bxq] cmd_key_aes_gen 1");
+    keyParam.idLen = params[0].memref.size;
+    keyParam.id = TEE_Malloc(keyParam.idLen, 0);
+    if (!keyParam.id) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+    TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
+    keyParam.keySize = params[1].value.a;
+    TEE_MemMove(keyParam.iv, params[2].memref.buffer, params[2].memref.size);
+
+    IMSG("[bxq] cmd_key_aes_gen 2, keyPair =  0x%02x", keyPair);
+    res = KeyGen(TEE_TYPE_AES, keyParam, &keyPair);
+    IMSG("[bxq] cmd_key_aes_gen 3, keyPair =  0x%02x", keyPair);
 }
 
 static TEE_Result cmd_key_buffer_get(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
@@ -157,6 +187,99 @@ static TEE_Result cmd_crypto_rsa_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     return res;
 }
 
+static TEE_Result cmd_crypto_aes_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+    KEY_PARAM keyParam;
+    TEE_ObjectHandle key;
+
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                                            TEE_PARAM_TYPE_NONE);
+    if (pt != exp_pt) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    IMSG("[bxq] cmd_crypto_aes_enc 1");
+    keyParam.idLen = params[0].memref.size;
+    keyParam.id = TEE_Malloc(keyParam.idLen, 0);
+    if (!keyParam.id) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+    TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
+
+    res = KeyRestore(keyParam.id, keyParam.idLen, &key);
+    if(res != TEE_SUCCESS) {
+        EMSG("cmd_crypto_aes_enc() fail. res = %x.\n", res);
+    }
+
+    BUFFER in;
+    BUFFER out;
+    in.len = params[1].memref.size;
+    in.data = params[1].memref.buffer;
+    out.len = params[2].memref.size;
+    out.data = params[2].memref.buffer;
+
+    IMSG("[bxq] cmd_crypto_aes_enc 2, out.len = %d", out.len);
+
+    res = AesEncode(key, TEE_ALG_AES_CBC_NOPAD, in, &out);
+    if(res != TEE_SUCCESS) {
+        EMSG("cmd_crypto_aes_enc fail. res = %x.\n", res);
+    }
+
+    IMSG("[bxq] cmd_crypto_aes_enc 3, out.len = %d", out.len);
+
+    /* Return the number of byte effectively filled */
+	params[2].memref.size = out.len;
+
+    return res;
+}
+
+static TEE_Result cmd_crypto_aes_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+    KEY_PARAM keyParam;
+    TEE_ObjectHandle key;
+
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                                            TEE_PARAM_TYPE_NONE);
+    if (pt != exp_pt) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    IMSG("[bxq] cmd_crypto_aes_dec 1");
+    keyParam.idLen = params[0].memref.size;
+    keyParam.id = TEE_Malloc(keyParam.idLen, 0);
+    if (!keyParam.id) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+    TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
+
+    res = KeyRestore(keyParam.id, keyParam.idLen, &key);
+    if(res != TEE_SUCCESS) {
+        EMSG("cmd_crypto_aes_dec() fail. res = %x.\n", res);
+    }
+
+    BUFFER in;
+    BUFFER out;
+    in.len = params[1].memref.size;
+    in.data = params[1].memref.buffer;
+    out.len = params[2].memref.size;
+    out.data = params[2].memref.buffer;
+
+    res = AesDecode(key, TEE_ALG_AES_CBC_NOPAD, in, &out);
+    if(res != TEE_SUCCESS) {
+        EMSG("cmd_crypto_aes_dec fail. res = %x.\n", res);
+    }
+
+    /* Return the number of byte effectively filled */
+	params[2].memref.size = out.len;
+
+    return res;
+}
 
 TEE_Result TA_CreateEntryPoint(void)
 {
@@ -212,9 +335,15 @@ TEE_Result TA_InvokeCommandEntryPoint(void __unused *session,
     case TA_CMD_CRYPTO_RSA_DEC:
         IMSG("Command ID: TA_CMD_CRYPTO_RSA_DEC");
         return cmd_crypto_rsa_dec(param_types, params);
-    case TA_SECURE_CMD_GEN_AES_KEY:
-        IMSG("Command ID: TA_SECURE_CMD_GEN_AES_KEY");
-        return TEE_SUCCESS; // secure_cmd_gen_aes_key(param_types, params);
+    case TA_CMD_KEY_AES_GEN:
+        IMSG("Command ID: TA_CMD_KEY_AES_GEN");
+        return cmd_key_aes_gen(param_types, params);
+    case TA_CMD_CRYPTO_AES_ENC:
+        IMSG("Command ID: TA_CMD_CRYPTO_AES_ENC");
+        return cmd_crypto_aes_enc(param_types, params);
+    case TA_CMD_CRYPTO_AES_DEC:
+        IMSG("Command ID: TA_CMD_CRYPTO_AES_DEC");
+        return cmd_crypto_aes_dec(param_types, params);
     default:
         EMSG("Command ID 0x%x is not supported", command);
         return TEE_ERROR_NOT_SUPPORTED;

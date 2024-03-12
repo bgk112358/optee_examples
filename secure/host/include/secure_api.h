@@ -35,7 +35,7 @@ typedef struct _rsa_key_attr_value {
 
 int32_t TeecInit();
 
-int32_t KeyAesGen(uint8_t *id, uint32_t idLen, uint32_t keyLen);
+int32_t KeyAesGen(uint8_t *id, uint32_t idLen, uint32_t keyLen, BUFFER iv);
 int32_t KeyRsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen);
 int32_t KeyBufferGetByID(const uint8_t *id, uint32_t idLen, void *buffer, uint32_t *size);
 
@@ -50,4 +50,3 @@ int32_t CryptoRsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digest, BUFFER
 int32_t CerCsrCreate(uint8_t *id, uint32_t idLen, void *DN, uint32_t *size);
 
 #endif __SECURE_API_H__
-

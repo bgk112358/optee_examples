@@ -7,6 +7,12 @@
 #include <store.h>
 
 typedef enum {
+    AES_SECRET_VALUE    =   0,
+    AES_IV_VAULE        =   1,
+    AES_ATTR_END        =   2
+} AES_ATTR;
+
+typedef enum {
     RSA_MODULUS             =   0,
     RSA_PUBLIC_EXPONENT     =   1,
     RSA_PRIVATE_EXPONENT    =   2,
@@ -20,29 +26,27 @@ typedef enum {
 
 typedef enum {
     KEY_SIZE        =   0,
-    REVERSE_1       =   1,
+    KEY_TYPE        =   1,
     REVERSE_2       =   2,
     REVERSE_3       =   3,
     CUS_PARAMS_END  =   4
 } CUS_PARAMS;
 
-const uint32_t op_attr[] = {TEE_ATTR_RSA_MODULUS,
-                            TEE_ATTR_RSA_PUBLIC_EXPONENT,
-                            TEE_ATTR_RSA_PRIVATE_EXPONENT,
-                            TEE_ATTR_RSA_PRIME1,
-                            TEE_ATTR_RSA_PRIME2,
-                            TEE_ATTR_RSA_EXPONENT1,
-                            TEE_ATTR_RSA_EXPONENT2,
-                            TEE_ATTR_RSA_COEFFICIENT
+const uint32_t op_rsa_attr[] = {TEE_ATTR_RSA_MODULUS,
+                                TEE_ATTR_RSA_PUBLIC_EXPONENT,
+                                TEE_ATTR_RSA_PRIVATE_EXPONENT,
+                                TEE_ATTR_RSA_PRIME1,
+                                TEE_ATTR_RSA_PRIME2,
+                                TEE_ATTR_RSA_EXPONENT1,
+                                TEE_ATTR_RSA_EXPONENT2,
+                                TEE_ATTR_RSA_COEFFICIENT
 };
 
 typedef struct {
     uint32_t params[CUS_PARAMS_END];
-    uint32_t len[RSA_ATTR_END];
+    uint32_t len[RSA_ATTR_END];             // MAX(AES_ATTR_END, RSA_ATTR_END)
     uint8_t* data[RSA_ATTR_END];
 } KEY_ATTR;
-
-
 
 TEE_Result KeyGen(const uint32_t keyType, KEY_PARAM keyParam, TEE_ObjectHandle *keyPair)
 {
@@ -64,7 +68,7 @@ TEE_Result KeyGen(const uint32_t keyType, KEY_PARAM keyParam, TEE_ObjectHandle *
     }
     *keyPair = key;
 
-    res = KeyStore(keyParam.id, keyParam.idLen, key);
+    res = KeyStore(keyParam, key);
     if (res != TEE_SUCCESS) {
         EMSG("Key_Store err, id = %s, res = 0x%x ", keyParam.id, res);
         return res;
@@ -85,8 +89,7 @@ TEE_Result KeyGen(const uint32_t keyType, KEY_PARAM keyParam, TEE_ObjectHandle *
     return TEE_SUCCESS;
 }
 
-
-TEE_Result KeyStore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle keyPair)
+TEE_Result KeyStoreRsa(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle keyPair)
 {
     TEE_Result res;
     TEE_ObjectInfo keyInfo;
@@ -101,13 +104,14 @@ TEE_Result KeyStore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle ke
         return res;
     }
     IMSG("[bxq] secure_cmd_gen_key 4");
-
+    
     key_attr.params[KEY_SIZE] = keyInfo.keySize;
+    key_attr.params[KEY_TYPE] = keyInfo.objectType;
 
     IMSG("[bxq] secure_cmd_gen_key 5, keySize = %d", key_attr.params[KEY_SIZE]);
     for (size_t i = 0; i < RSA_ATTR_END; i++) {
         IMSG("[bxq] secure_cmd_gen_key 5.1.%d", i);
-        res = TEE_GetObjectBufferAttribute(keyPair, op_attr[i], NULL, &(key_attr.len[i]));
+        res = TEE_GetObjectBufferAttribute(keyPair, op_rsa_attr[i], NULL, &(key_attr.len[i]));
         if(res != TEE_ERROR_SHORT_BUFFER){
             EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
             return res;
@@ -122,7 +126,7 @@ TEE_Result KeyStore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle ke
         }
 
         IMSG("[bxq] secure_cmd_gen_key 5.3.%d, key_attr.data[%d] = 0x%02x", i, i, key_attr.data[i]);
-        res = TEE_GetObjectBufferAttribute(keyPair, op_attr[i], key_attr.data[i], &(key_attr.len[i]));
+        res = TEE_GetObjectBufferAttribute(keyPair, op_rsa_attr[i], key_attr.data[i], &(key_attr.len[i]));
         if(TEE_SUCCESS != res){
             EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
             return res;
@@ -168,42 +172,124 @@ TEE_Result KeyStore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle ke
 
     int32_t code;
     return Store_WriteKey(keyID, keyIDLen, buff, bufLen, &code);
-
-
-    // IMSG("[bxq] secure_cmd_gen_key 11");
-    // res = TEE_WriteObjectData(object, buff, bufLen);
-    // if (res != TEE_SUCCESS) {
-    //     EMSG("TEE_WriteObjectData failed 0x%08x", res);
-    //     TEE_CloseAndDeletePersistentObject1(object);
-    // } else {
-    //     IMSG("[bxq] secure_cmd_gen_key 12");
-    //     TEE_CloseObject(object);
-    // }
 }
 
-
-
-
-
-TEE_Result KeyRestore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle *keyPair)
+TEE_Result KeyStoreAes(KEY_PARAM keyParam, TEE_ObjectHandle key)
 {
     TEE_Result res;
-    uint8_t *keyData;
+    TEE_ObjectInfo keyInfo;
+    KEY_ATTR key_attr;
+    uint32_t bufLen = 0;
+    uint32_t bufHeadLen = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);
+
+    IMSG("[bxq] KeyStoreAes 1");
+    res = TEE_GetObjectInfo1(key, &keyInfo);
+    if (res != TEE_SUCCESS) {
+        EMSG("TEE_GetObjectInfo1() fail. res = %x.\n", res);
+        return res;
+    }
+    IMSG("[bxq] KeyStoreAes 2");
+    
+    TEE_MemFill(&key_attr, 0, sizeof(key_attr));
+    key_attr.params[KEY_SIZE] = keyInfo.keySize;
+    key_attr.params[KEY_TYPE] = keyInfo.objectType;
+
+    IMSG("[bxq] KeyStoreAes 3, keySize = %d", key_attr.params[KEY_SIZE]);
+
+
+    IMSG("[bxq] KeyStoreAes 3.1.%d", AES_SECRET_VALUE);
+    res = TEE_GetObjectBufferAttribute(key, TEE_ATTR_SECRET_VALUE, NULL, &(key_attr.len[AES_SECRET_VALUE]));
+    if(res != TEE_ERROR_SHORT_BUFFER){
+        EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
+        return res;
+    }
+
+    IMSG("[bxq] KeyStoreAes 3.2.%d,  key_attr.len[%d] = %d", AES_SECRET_VALUE, AES_SECRET_VALUE, key_attr.len[AES_SECRET_VALUE]);
+    key_attr.data[AES_SECRET_VALUE] = TEE_Malloc(key_attr.len[AES_SECRET_VALUE], 0);
+    if (!key_attr.data[AES_SECRET_VALUE]) {
+        EMSG("TEE_Malloc() fail.\n");
+        return TEE_ERROR_OUT_OF_MEMORY;
+        return res;
+    }
+
+    IMSG("[bxq] KeyStoreAes 3.3.%d, key_attr.data[%d] = 0x%02x", AES_SECRET_VALUE, AES_SECRET_VALUE, key_attr.data[AES_SECRET_VALUE]);
+    res = TEE_GetObjectBufferAttribute(key, TEE_ATTR_SECRET_VALUE, key_attr.data[AES_SECRET_VALUE], &(key_attr.len[AES_SECRET_VALUE]));
+    if(TEE_SUCCESS != res){
+        EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
+        return res;
+    }
+    bufLen += key_attr.len[AES_SECRET_VALUE];
+    IMSG("[bxq] KeyStoreAes 3.4.%d, key_attr.len[%d] = %d", AES_SECRET_VALUE, AES_SECRET_VALUE, key_attr.len[AES_SECRET_VALUE]);
+
+    IMSG_RAW("[bxq] key_attr.data[%d]: ", AES_SECRET_VALUE);
+    for (size_t j = 0; j < key_attr.len[AES_SECRET_VALUE]; j++) {
+        IMSG_RAW("0x%02x ", *(key_attr.data[AES_SECRET_VALUE] + j));
+    }
+    IMSG("end");
+
+    bufLen += sizeof(keyParam.iv);
+
+    IMSG("[bxq] KeyStoreAes 4, bufHeadLen = %d", bufHeadLen);
+    bufLen += bufHeadLen;
+    uint8_t *buff = TEE_Malloc(bufLen, 0);
+    if (!buff) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+
+    IMSG("[bxq] KeyStoreAes 5, bufLen = %d", bufLen);
+    TEE_MemMove(buff, &key_attr, bufHeadLen);
+    IMSG("[bxq] KeyStoreAes 6, key_attr.data[AES_SECRET_VALUE] = 0x%02x", key_attr.data[AES_SECRET_VALUE]);
+    TEE_MemMove(buff + bufHeadLen, key_attr.data[AES_SECRET_VALUE], key_attr.len[AES_SECRET_VALUE]);
+    IMSG("[bxq] KeyStoreAes 7");
+    TEE_Free(key_attr.data[AES_SECRET_VALUE]);
+    IMSG("[bxq] KeyStoreAes 8");
+    TEE_MemMove(buff + bufHeadLen + key_attr.len[AES_SECRET_VALUE], keyParam.iv, sizeof(keyParam.iv));
+
+    IMSG_RAW("[bxq] bufLen = %d, aes_key_attr_value: ", bufLen);
+    for (size_t j = 0; j < bufLen; j++) {
+        IMSG_RAW("0x%02x ", *(buff + j));
+    }
+    IMSG("KeyStoreAes 9, aes buff line end");
+
+    int32_t code;
+    return Store_WriteKey(keyParam.id, keyParam.idLen, buff, bufLen, &code);
+}
+
+TEE_Result KeyStore(KEY_PARAM keyParam, TEE_ObjectHandle keyPair)
+{
+    TEE_Result res;
+    TEE_ObjectInfo info;
+
+    IMSG("[bxq] KeyStore 1");
+    res = TEE_GetObjectInfo1(keyPair, &info);
+    if (res != TEE_SUCCESS) {
+        EMSG("TEE_GetObjectInfo1() fail. res = %x.\n", res);
+        return res;
+    }
+    IMSG("[bxq] KeyStore 2");
+
+    if (info.objectType == TEE_TYPE_RSA_KEYPAIR) {
+        res = KeyStoreRsa(keyParam.id, keyParam.idLen, keyPair);
+    } else if (info.objectType == TEE_TYPE_AES) {
+        res = KeyStoreAes(keyParam, keyPair);
+    }
+
+    return res;
+}
+
+TEE_Result KeyRestoreRsa(uint8_t *keyData, TEE_ObjectHandle *keyPair)
+{
+    TEE_Result res;
     uint32_t keyDataLen;
     uint32_t code;
     TEE_Attribute attrs[8];
     TEE_ObjectHandle key;
     KEY_ATTR key_attr;
 
-    IMSG("[bxq] Key_Restore 1");
-    res = Store_ReadKey(keyID, keyIDLen, &keyData, &keyDataLen, &code);
-
-    IMSG("[bxq] secure_cmd_rsa_enc 7, keyData = 0x%p, keyDataLen = %d", keyData, keyDataLen);
     uint32_t bufHeadLen = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);
     uint8_t *p = keyData + bufHeadLen;
     TEE_MemMove(&key_attr, keyData, bufHeadLen);
 
-    IMSG("[bxq] secure_cmd_rsa_enc 7.0, p = %p, bufHeadLen = %d", p, bufHeadLen);
     key_attr.data[0] = p;
     for (size_t i = 0; i < RSA_ATTR_END - 1; i++) {
         IMSG("[bxq] secure_cmd_rsa_enc 7.1.%d, len[%d] = %d", i, i, key_attr.len[i]);
@@ -245,7 +331,7 @@ TEE_Result KeyRestore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle 
     uint32_t p_len;
     for (size_t i = 0; i < RSA_ATTR_END; i++) {
         IMSG("[bxq] secure_cmd_rsa_enc 11.1.%d", i);
-        res = TEE_GetObjectBufferAttribute(key, op_attr[i], NULL, &p_len);
+        res = TEE_GetObjectBufferAttribute(key, op_rsa_attr[i], NULL, &p_len);
         if(res != TEE_ERROR_SHORT_BUFFER){
             EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
             return res;
@@ -260,7 +346,7 @@ TEE_Result KeyRestore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle 
         }
 
         IMSG("[bxq] secure_cmd_rsa_enc 11.3.%d, p[%d] = 0x%02x", i, i, *p);
-        res = TEE_GetObjectBufferAttribute(key, op_attr[i], p, &p_len);
+        res = TEE_GetObjectBufferAttribute(key, op_rsa_attr[i], p, &p_len);
         if(TEE_SUCCESS != res){
             EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
             return res;
@@ -279,6 +365,71 @@ TEE_Result KeyRestore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle 
     // test end
 
     return TEE_SUCCESS;
+}
+
+TEE_Result KeyRestoreAes(uint8_t *keyData, TEE_ObjectHandle *keyPair)
+{
+    IMSG("[bxq] KeyRestoreAes 1");
+
+    TEE_Result res;
+    uint32_t keyDataLen;
+    uint32_t code;
+    TEE_Attribute attrs;
+    TEE_ObjectHandle key;
+    KEY_ATTR key_attr;
+
+    uint32_t bufHeadLen = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);
+    // uint8_t *p = keyData + bufHeadLen;
+    TEE_MemMove(&key_attr, keyData, bufHeadLen);
+    key_attr.data[0] = keyData + bufHeadLen;
+
+    IMSG("[bxq] KeyRestoreAes 2");
+
+    IMSG("[bxq] KeyRestoreAes 3");
+    TEE_InitRefAttribute(&attrs, TEE_ATTR_SECRET_VALUE, key_attr.data[AES_SECRET_VALUE], key_attr.len[AES_SECRET_VALUE]);
+
+    IMSG("[bxq] KeyRestoreAes 4, key_attr.params[KEY_SIZE] = %d", key_attr.params[KEY_SIZE]);
+    res = TEE_AllocateTransientObject(TEE_TYPE_AES, key_attr.params[KEY_SIZE], &key);
+    if(TEE_SUCCESS != res) {
+        EMSG("TEE_AllocateTransientObject() fail. res = %x.\n", res);
+        return res;
+    }
+
+    IMSG("[bxq] KeyRestoreAes 5");
+    res = TEE_PopulateTransientObject(key, &attrs, 1);
+    if(TEE_SUCCESS != res){
+        EMSG("TEE_PopulateTransientObject() fail. res = %x.\n", res);
+        return res;
+    }
+
+    IMSG("[bxq] KeyRestoreAes 6");
+    *keyPair = key;
+    return TEE_SUCCESS;
+}
+
+TEE_Result KeyRestore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle *keyPair)
+{
+    TEE_Result res;
+    uint8_t *keyData;
+    uint32_t keyDataLen;
+    uint32_t code;
+    KEY_ATTR key_attr;
+
+    IMSG("[bxq] KeyRestore 1");
+    res = Store_ReadKey(keyID, keyIDLen, &keyData, &keyDataLen, &code);
+
+    IMSG("[bxq] KeyRestore 2, keyData = 0x%p, keyDataLen = %d", keyData, keyDataLen);
+    uint32_t bufHeadLen = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);
+    // uint8_t *p = keyData + bufHeadLen;
+    TEE_MemMove(&key_attr, keyData, bufHeadLen);
+    IMSG("[bxq] secure_cmd_rsa_enc 7.0, bufHeadLen = %d", bufHeadLen);
+
+    if (key_attr.params[KEY_TYPE] == TEE_TYPE_RSA_KEYPAIR) {
+        return KeyRestoreRsa(keyData, keyPair);
+    } else if (key_attr.params[KEY_TYPE] == TEE_TYPE_AES) {
+        return KeyRestoreAes(keyData, keyPair);
+    }
+    return res;
 }
 
 TEE_Result KeyRestoreValue(const uint8_t *keyID, uint32_t keyIDLen, void *buffer, uint32_t *bufferLen)

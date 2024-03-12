@@ -2,11 +2,7 @@
 #define __RSA_H__
 
 #include <tee_internal_api.h>
-
-typedef struct buffer {
-    uint8_t *data;
-    uint32_t len;
-} BUFFER;
+#include "common.h"
 
 TEE_Result RsaEncode(TEE_ObjectHandle keyPair, BUFFER in, BUFFER *out);
 TEE_Result RsaDecode(TEE_ObjectHandle keyPair, BUFFER in, BUFFER *out);
