@@ -126,4 +126,46 @@
 */
 #define TA_CMD_CRYPTO_AES_DEC       12
 
+
+/*
+* in	params[0].memref.buffer key id
+* in	params[0].memref.size   key id size
+* in	params[1].value.a       key length
+*/
+#define TA_CMD_KEY_SM2_PKE_GEN		13
+
+/*
+* in	params[0].memref.buffer key id
+* in	params[0].memref.size   key id size
+* in	params[1].value.a       key length
+*/
+#define TA_CMD_KEY_SM2_DSA_GEN		14
+
+/*
+* in	params[0].memref  key id
+* in	params[1].memref  input
+* out	params[2].memref  output
+*/
+#define TA_CMD_CRYPTO_SM2_PKE_ENC	15
+
+/*
+* in	params[0].memref  key id
+* in	params[1].memref  input
+* out	params[2].memref  output
+*/
+#define TA_CMD_CRYPTO_SM2_PKE_DEC	16
+
+/*
+* in	params[0].memref  key id
+* in	params[1].memref  input
+* out	params[2].memref  output
+*/
+#define TA_CMD_CRYPTO_SM2_DSA_ENC	17
+/*
+* in	params[0].memref  key id
+* in	params[1].memref  input
+* out	params[2].memref  output
+*/
+#define TA_CMD_CRYPTO_SM2_DSA_DEC	18
+
 #endif /* __SECURE_H__ */

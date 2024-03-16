@@ -5,6 +5,14 @@
 
 #include <key.h>
 #include <store.h>
+#include <sm2.h>
+
+typedef enum {
+    ECC_PUBLIC_VALUE_X      = 0,
+    ECC_PUBLIC_VALUE_Y      = 1,
+    ECC_PRIVATE_VALUE       = 2,
+    ECC_ATTR_END            = 3
+} SM2_ATTR;
 
 typedef enum {
     AES_SECRET_VALUE    =   0,
@@ -42,6 +50,11 @@ const uint32_t op_rsa_attr[] = {TEE_ATTR_RSA_MODULUS,
                                 TEE_ATTR_RSA_COEFFICIENT
 };
 
+const uint32_t op_sm2_attr[] = {TEE_ATTR_ECC_PUBLIC_VALUE_X,
+                                TEE_ATTR_ECC_PUBLIC_VALUE_Y,
+                                TEE_ATTR_ECC_PRIVATE_VALUE
+};
+
 typedef struct {
     uint32_t params[CUS_PARAMS_END];
     uint32_t len[RSA_ATTR_END];             // MAX(AES_ATTR_END, RSA_ATTR_END)
@@ -53,7 +66,7 @@ TEE_Result KeyGen(const uint32_t keyType, KEY_PARAM keyParam, TEE_ObjectHandle *
     TEE_Result res;
     TEE_ObjectHandle key;
 
-    IMSG("[bxq] KeyGen 1, keySize = %d", keyParam.keySize);
+    IMSG("[bxq] KeyGen 1, keyType = 0x%x, keySize = %d", keyType, keyParam.keySize);
     res = TEE_AllocateTransientObject(keyType, keyParam.keySize, &key);
     if (res) {
         EMSG("TEE_AllocateTransientObject(%#" PRIx32 ", %" PRId32 "): %#" PRIx32, keyType, keyParam.keySize, res);
@@ -68,23 +81,47 @@ TEE_Result KeyGen(const uint32_t keyType, KEY_PARAM keyParam, TEE_ObjectHandle *
     }
     *keyPair = key;
 
+    // // test start 
+    // uint8_t in[] = "1234567890123456";
+    // uint8_t out[1024];
+    // uint32_t outLen = 1024;
+    // res = sm2_enc(key, in, sizeof(in), out, &outLen);
+    // if (res != TEE_SUCCESS) {
+    //     EMSG("TEE_GetObjectInfo1() fail. res = %x.\n", res);
+    //     return res;
+    // }
+    // IMSG("[bxq] KeyGen 2.1, Sm2Enc start");
+    // for (size_t i = 0; i < outLen; i++) {
+    //     IMSG(" 0x%02x", out[i]);
+    // }
+    // IMSG("[bxq] KeyGen 2.2, Sm2Enc end");
+    // // test end
+
+    TEE_ObjectInfo key_info;
+	res = TEE_GetObjectInfo1(key, &key_info);
+	if (res) {
+		EMSG("TEE_GetObjectInfo1 error! res=0x%x", res);
+		return res;
+	}
+    IMSG("[bxq] KeyGen 3, keySize = %d", key_info.keySize);
+
     res = KeyStore(keyParam, key);
     if (res != TEE_SUCCESS) {
         EMSG("Key_Store err, id = %s, res = 0x%x ", keyParam.id, res);
         return res;
     }
 
-    IMSG("[bxq] KeyGen 3");
+    IMSG("[bxq] KeyGen 4");
 
-    TEE_ObjectHandle keyRestore;
-    IMSG("[bxq] KeyGen 4, keyRestore = 0x%02x", keyRestore);
-    res = KeyRestore(keyParam.id, keyParam.idLen, &keyRestore);
-    if (res != TEE_SUCCESS) {
-        EMSG("Key_Store err, id = %s, res = 0x%x ", keyParam.id, res);
-        return res;
-    }
+    // TEE_ObjectHandle keyRestore;
+    // IMSG("[bxq] KeyGen 4, keyRestore = 0x%02x", keyRestore);
+    // res = KeyRestore(keyParam.id, keyParam.idLen, &keyRestore);
+    // if (res != TEE_SUCCESS) {
+    //     EMSG("Key_Store err, id = %s, res = 0x%x ", keyParam.id, res);
+    //     return res;
+    // }
 
-    IMSG("[bxq] KeyGen 5, keyRestore = 0x%02x", keyRestore);
+    // IMSG("[bxq] KeyGen 5, keyRestore = 0x%02x", keyRestore);
 
     return TEE_SUCCESS;
 }
@@ -165,9 +202,9 @@ TEE_Result KeyStoreRsa(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle
     }
 
     IMSG_RAW("[bxq] bufLen = %d, key_attr: ", bufLen);
-    for (size_t j = 0; j < bufLen; j++) {
-        IMSG_RAW("0x%02x ", *(buff + j));
-    }
+    // for (size_t j = 0; j < bufLen; j++) {
+    //     IMSG_RAW("0x%02x ", *(buff + j));
+    // }
     IMSG("end");
 
     int32_t code;
@@ -246,13 +283,120 @@ TEE_Result KeyStoreAes(KEY_PARAM keyParam, TEE_ObjectHandle key)
     TEE_MemMove(buff + bufHeadLen + key_attr.len[AES_SECRET_VALUE], keyParam.iv, sizeof(keyParam.iv));
 
     IMSG_RAW("[bxq] bufLen = %d, aes_key_attr_value: ", bufLen);
-    for (size_t j = 0; j < bufLen; j++) {
-        IMSG_RAW("0x%02x ", *(buff + j));
-    }
+    // for (size_t j = 0; j < bufLen; j++) {
+    //     IMSG_RAW("0x%02x ", *(buff + j));
+    // }
     IMSG("KeyStoreAes 9, aes buff line end");
 
     int32_t code;
     return Store_WriteKey(keyParam.id, keyParam.idLen, buff, bufLen, &code);
+}
+
+TEE_Result KeyStoreSm2Pke(KEY_PARAM keyParam, TEE_ObjectHandle keyPair)
+{
+    TEE_Result res;
+    TEE_ObjectInfo keyInfo;
+    KEY_ATTR key_attr;
+    uint32_t bufLen = 0;
+    uint32_t bufHeadLen = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);
+
+    // // test start
+    // uint8_t in[] = "1234567890123456";
+    // uint8_t out[1024];
+    // uint32_t outLen = 1024;
+    // res = sm2_enc(keyPair, in, sizeof(in), out, &outLen);
+    // if (res != TEE_SUCCESS) {
+    //     EMSG("TEE_GetObjectInfo1() fail. res = %x.\n", res);
+    //     return res;
+    // }
+    // IMSG("[bxq] KeyStoreSm2Pke 2, Sm2Enc start");
+    // for (size_t i = 0; i < outLen; i++) {
+    //     IMSG(" 0x%02x", out[i]);
+    // }
+    // IMSG("[bxq] KeyStoreSm2Pke 3, Sm2Enc end");
+    // // test end
+
+    IMSG("[bxq] KeyStoreSm2Pke 4");
+    res = TEE_GetObjectInfo1(keyPair, &keyInfo);
+    if (res != TEE_SUCCESS) {
+        EMSG("TEE_GetObjectInfo1() fail. res = %x.\n", res);
+        return res;
+    }
+    IMSG("[bxq] KeyStoreSm2Pke 4");
+    
+    key_attr.params[KEY_SIZE] = keyInfo.keySize;
+    key_attr.params[KEY_TYPE] = keyInfo.objectType;
+
+    IMSG("[bxq] KeyStoreSm2Pke 5, keySize = %d", key_attr.params[KEY_SIZE]);
+    for (size_t i = 0; i < ECC_ATTR_END; i++) {
+        IMSG("[bxq] KeyStoreSm2Pke 5.1.%d", i);
+        res = TEE_GetObjectBufferAttribute(keyPair, op_sm2_attr[i], NULL, &(key_attr.len[i]));
+        if(res != TEE_ERROR_SHORT_BUFFER){
+            EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
+            return res;
+        }
+
+        IMSG("[bxq] KeyStoreSm2Pke 5.2.%d,  key_attr.len[%d] = %d", i, i, key_attr.len[i]);
+        key_attr.data[i] = TEE_Malloc(key_attr.len[i], 0);
+        if (!key_attr.data[i]) {
+            EMSG("TEE_Malloc() fail.\n");
+            return TEE_ERROR_OUT_OF_MEMORY;
+            return res;
+        }
+
+        IMSG("[bxq] KeyStoreSm2Pke 5.3.%d, key_attr.data[%d] = 0x%02x", i, i, key_attr.data[i]);
+        res = TEE_GetObjectBufferAttribute(keyPair, op_sm2_attr[i], key_attr.data[i], &(key_attr.len[i]));
+        if(TEE_SUCCESS != res){
+            EMSG("TEE_GetObjectBufferAttribute() fail. res = %x.\n", res);
+            return res;
+        }
+        bufLen += key_attr.len[i];
+        IMSG("[bxq] KeyStoreSm2Pke 5.4.%d, key_attr.len[%d] = %d", i, i, key_attr.len[i]);
+
+        IMSG_RAW("[bxq] key_attr.data[%d]: ", i);
+        for (size_t j = 0; j < key_attr.len[i]; j++) {
+            IMSG_RAW("0x%02x ", *(key_attr.data[i] + j));
+        }
+        IMSG("end");
+    }
+
+    IMSG("[bxq] KeyStoreSm2Pke 6, bufHeadLen = %d", bufHeadLen);
+    bufLen += bufHeadLen;
+    uint8_t *buff = TEE_Malloc(bufLen, 0);
+    if (!buff) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+
+    IMSG("[bxq] KeyStoreSm2Pke 7, bufLen = %d", bufLen);
+    TEE_MemMove(buff, &key_attr, bufHeadLen);
+    IMSG("[bxq] KeyStoreSm2Pke 8, key_attr.data[0] = 0x%02x", key_attr.data[0]);
+    TEE_MemMove(buff + bufHeadLen, key_attr.data[0], key_attr.len[0]);
+    IMSG("[bxq] KeyStoreSm2Pke 9");
+    TEE_Free(key_attr.data[0]);
+    IMSG("[bxq] KeyStoreSm2Pke 10");
+    uint8_t *p = buff + bufHeadLen;
+    for (size_t i = 1; i < ECC_ATTR_END; i++) {
+        IMSG("[bxq] KeyStoreSm2Pke 10.1.%d", i);
+        p += key_attr.len[i - 1];
+        IMSG("[bxq] KeyStoreSm2Pke 10.2.%d, p = 0x%02x, len[%d] = %d, len[%d] = %d", i, p, i - 1, key_attr.len[i - 1], i, key_attr.len[i]);
+        TEE_MemMove(p, key_attr.data[i], key_attr.len[i]);
+        TEE_Free(key_attr.data[i]);
+    }
+
+    IMSG_RAW("[bxq] bufLen = %d, key_attr: ", bufLen);
+    // for (size_t j = 0; j < bufLen; j++) {
+    //     IMSG_RAW("0x%02x ", *(buff + j));
+    // }
+    IMSG("end");
+
+    int32_t code;
+    return Store_WriteKey(keyParam.id, keyParam.idLen, buff, bufLen, &code);
+}
+
+
+TEE_Result KeyStoreSm2Dsa(KEY_PARAM keyParam, TEE_ObjectHandle keyPair)
+{
+    return KeyStoreSm2Pke(keyParam, keyPair);
 }
 
 TEE_Result KeyStore(KEY_PARAM keyParam, TEE_ObjectHandle keyPair)
@@ -272,7 +416,11 @@ TEE_Result KeyStore(KEY_PARAM keyParam, TEE_ObjectHandle keyPair)
         res = KeyStoreRsa(keyParam.id, keyParam.idLen, keyPair);
     } else if (info.objectType == TEE_TYPE_AES) {
         res = KeyStoreAes(keyParam, keyPair);
-    }
+    } else if (info.objectType == TEE_TYPE_SM2_PKE_KEYPAIR) {
+        res = KeyStoreSm2Pke(keyParam, keyPair);
+    } else if (info.objectType == TEE_TYPE_SM2_DSA_KEYPAIR) {
+        res = KeyStoreSm2Dsa(keyParam, keyPair);
+    }    
 
     return res;
 }
@@ -407,6 +555,135 @@ TEE_Result KeyRestoreAes(uint8_t *keyData, TEE_ObjectHandle *keyPair)
     return TEE_SUCCESS;
 }
 
+TEE_Result KeyRestoreSm2Pke(uint8_t *keyData, TEE_ObjectHandle *keyPair)
+{
+    TEE_Result res;
+    uint32_t keyDataLen;
+    uint32_t code;
+    TEE_Attribute attrs[3];
+    // TEE_ObjectHandle key;
+    KEY_ATTR key_attr;
+
+    uint32_t bufHeadLen = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);
+    uint8_t *p = keyData + bufHeadLen;
+    TEE_MemMove(&key_attr, keyData, bufHeadLen);
+
+    key_attr.data[0] = p;
+    for (size_t i = 0; i < ECC_ATTR_END - 1; i++) {
+        IMSG("[bxq] KeyRestoreSm2Pke 7.1.%d, len[%d] = %d", i, i, key_attr.len[i]);
+        p += key_attr.len[i];
+        key_attr.data[i + 1] = p;
+        IMSG("[bxq] KeyRestoreSm2Pke 7.2.%d, p = 0x%02x", i, p);
+    }
+
+    for (size_t i = 0; i < ECC_ATTR_END; i++)
+    {
+        IMSG_RAW("[bxq] key_attr.data[%d]: ", i);
+        for (size_t j = 0; j < key_attr.len[i]; j++) {
+            IMSG_RAW("0x%02x ", *(key_attr.data[i] + j));
+        }
+        IMSG("end");
+    }
+
+    IMSG("[bxq] KeyRestoreSm2Pke 8");
+
+    IMSG("[bxq] KeyRestoreSm2Pke 9");
+    TEE_InitRefAttribute(&attrs[0], TEE_ATTR_ECC_PUBLIC_VALUE_X, key_attr.data[ECC_PUBLIC_VALUE_X], key_attr.len[ECC_PUBLIC_VALUE_X]);
+    TEE_InitRefAttribute(&attrs[1], TEE_ATTR_ECC_PUBLIC_VALUE_Y, key_attr.data[ECC_PUBLIC_VALUE_Y], key_attr.len[ECC_PUBLIC_VALUE_Y]);
+    TEE_InitRefAttribute(&attrs[2], TEE_ATTR_ECC_PRIVATE_VALUE, key_attr.data[ECC_PRIVATE_VALUE], key_attr.len[ECC_PRIVATE_VALUE]);
+
+    IMSG("[bxq] KeyRestoreSm2Pke 10, key_attr.params[KEY_SIZE] = %d", key_attr.params[KEY_SIZE]);
+    res = TEE_AllocateTransientObject(TEE_TYPE_SM2_PKE_KEYPAIR, key_attr.params[KEY_SIZE], keyPair);
+    if(TEE_SUCCESS != res) {
+        EMSG("TEE_AllocateTransientObject() fail. res = %x.\n", res);
+        return res;
+    }
+
+    IMSG("[bxq] KeyRestoreSm2Pke 11");
+    res = TEE_PopulateTransientObject(*keyPair, attrs, 3);
+    if(TEE_SUCCESS != res){
+        EMSG("TEE_PopulateTransientObject() fail. res = %x.\n", res);
+        return res;
+    }
+
+    // test start 
+    // uint8_t in[] = "1234567890123456";
+    // uint8_t out[1024];
+    // uint32_t outLen = 1024;
+    // res = sm2_enc(*keyPair, in, sizeof(in), out, &outLen);
+    // if (res != TEE_SUCCESS) {
+    //     EMSG("TEE_GetObjectInfo1() fail. res = %x.\n", res);
+    //     return res;
+    // }
+    // IMSG("[bxq] KeyRestoreSm2Pke 11.1, Sm2Enc start");
+    // for (size_t i = 0; i < outLen; i++) {
+    //     IMSG(" 0x%02x", out[i]);
+    // }
+    // IMSG("[bxq] KeyRestoreSm2Pke 11.2, Sm2Enc end");
+    // test end
+
+
+    // *keyPair = key;
+
+    TEE_ObjectInfo key_info;
+	res = TEE_GetObjectInfo1(*keyPair, &key_info);
+	if (res) {
+		EMSG("TEE_GetObjectInfo1 error! res=0x%x", res);
+		return res;
+	}
+    IMSG("[bxq] KeyRestoreSm2Pke 12, keySize = %d, objectSize = %d, maxKeySize = %d, maxObjectSize = %d, dataSize = %d",
+        key_info.keySize, key_info.objectSize, key_info.maxKeySize, key_info.maxObjectSize, key_info.dataSize);
+
+    return TEE_SUCCESS;
+}
+
+TEE_Result KeyRestoreSm2Dsa(uint8_t *keyData, TEE_ObjectHandle *keyPair)
+{
+    TEE_Result res;
+    uint32_t keyDataLen;
+    uint32_t code;
+    TEE_Attribute attrs[8];
+    TEE_ObjectHandle key;
+    KEY_ATTR key_attr;
+
+    uint32_t bufHeadLen = sizeof(uint32_t) * (RSA_ATTR_END + CUS_PARAMS_END);
+    uint8_t *p = keyData + bufHeadLen;
+    TEE_MemMove(&key_attr, keyData, bufHeadLen);
+
+    key_attr.data[0] = p;
+    for (size_t i = 0; i < RSA_ATTR_END - 1; i++) {
+        IMSG("[bxq] KeyRestoreSm2Dsa 7.1.%d, len[%d] = %d", i, i, key_attr.len[i]);
+        p += key_attr.len[i];
+        key_attr.data[i + 1] = p;
+        IMSG("[bxq] KeyRestoreSm2Dsa 7.2.%d, p = 0x%02x", i, p);
+    }
+
+    IMSG("[bxq] KeyRestoreSm2Dsa 8");
+
+    IMSG("[bxq] KeyRestoreSm2Dsa 9");
+    TEE_InitRefAttribute(&attrs[0], TEE_ATTR_ECC_PUBLIC_VALUE_X, key_attr.data[ECC_PUBLIC_VALUE_X], key_attr.len[ECC_PUBLIC_VALUE_X]);
+    TEE_InitRefAttribute(&attrs[1], TEE_ATTR_ECC_PUBLIC_VALUE_Y, key_attr.data[ECC_PUBLIC_VALUE_Y], key_attr.len[ECC_PUBLIC_VALUE_Y]);
+    TEE_InitRefAttribute(&attrs[2], TEE_ATTR_ECC_PRIVATE_VALUE, key_attr.data[ECC_PRIVATE_VALUE], key_attr.len[ECC_PRIVATE_VALUE]);
+
+    IMSG("[bxq] KeyRestoreSm2Dsa 10, key_attr.params[KEY_SIZE] = %d", key_attr.params[KEY_SIZE]);
+    res = TEE_AllocateTransientObject(TEE_TYPE_SM2_DSA_KEYPAIR, key_attr.params[KEY_SIZE], &key);
+    if(TEE_SUCCESS != res) {
+        EMSG("TEE_AllocateTransientObject() fail. res = %x.\n", res);
+        return res;
+    }
+
+    IMSG("[bxq] KeyRestoreSm2Dsa 11");
+    res = TEE_PopulateTransientObject(key, attrs, 8);
+    if(TEE_SUCCESS != res){
+        EMSG("TEE_PopulateTransientObject() fail. res = %x.\n", res);
+        return res;
+    }
+
+    *keyPair = key;
+
+    return TEE_SUCCESS;
+}
+
 TEE_Result KeyRestore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle *keyPair)
 {
     TEE_Result res;
@@ -428,7 +705,12 @@ TEE_Result KeyRestore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle 
         return KeyRestoreRsa(keyData, keyPair);
     } else if (key_attr.params[KEY_TYPE] == TEE_TYPE_AES) {
         return KeyRestoreAes(keyData, keyPair);
+    } else if (key_attr.params[KEY_TYPE] == TEE_TYPE_SM2_PKE_KEYPAIR) {
+        return KeyRestoreSm2Pke(keyData, keyPair);
+    } else if (key_attr.params[KEY_TYPE] == TEE_TYPE_SM2_DSA_KEYPAIR) {
+        return KeyRestoreSm2Dsa(keyData, keyPair);
     }
+
     return res;
 }
 

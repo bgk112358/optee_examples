@@ -6,6 +6,7 @@
 #include <key.h>
 #include <rsa.h>
 #include <aes.h>
+#include <sm2.h>
 
 
 static TEE_Result cmd_key_rsa_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
@@ -46,7 +47,7 @@ static TEE_Result cmd_key_aes_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
 
     const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
                                             TEE_PARAM_TYPE_VALUE_INPUT,
-                                            TEE_PARAM_TYPE_NONE,
+                                            TEE_PARAM_TYPE_MEMREF_INPUT,
                                             TEE_PARAM_TYPE_NONE);
     if (pt != exp_pt) {
         return TEE_ERROR_BAD_PARAMETERS;
@@ -65,6 +66,68 @@ static TEE_Result cmd_key_aes_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
     IMSG("[bxq] cmd_key_aes_gen 2, keyPair =  0x%02x", keyPair);
     res = KeyGen(TEE_TYPE_AES, keyParam, &keyPair);
     IMSG("[bxq] cmd_key_aes_gen 3, keyPair =  0x%02x", keyPair);
+
+    return res;
+}
+
+static TEE_Result cmd_key_sm2_pke_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+    TEE_ObjectHandle keyPair;
+    KEY_PARAM keyParam;
+
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_VALUE_INPUT,
+                                            TEE_PARAM_TYPE_NONE,
+                                            TEE_PARAM_TYPE_NONE);
+    if (pt != exp_pt) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    IMSG("[bxq] cmd_key_sm2_pke_gen 1");
+    keyParam.idLen = params[0].memref.size;
+    keyParam.id = TEE_Malloc(keyParam.idLen, 0);
+    if (!keyParam.id) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+    TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
+    keyParam.keySize = params[1].value.a;
+
+    IMSG("[bxq] cmd_key_sm2_pke_gen 2, keyPair =  0x%02x", keyPair);
+    res = KeyGen(TEE_TYPE_SM2_PKE_KEYPAIR, keyParam, &keyPair);
+    IMSG("[bxq] cmd_key_sm2_pke_gen 3, keyPair =  0x%02x", keyPair);
+
+    return res;
+}
+
+static TEE_Result cmd_key_sm2_dsa_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+    TEE_ObjectHandle keyPair;
+    KEY_PARAM keyParam;
+
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_VALUE_INPUT,
+                                            TEE_PARAM_TYPE_NONE,
+                                            TEE_PARAM_TYPE_NONE);
+    if (pt != exp_pt) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    IMSG("[bxq] cmd_key_sm2_dsa_gen 1");
+    keyParam.idLen = params[0].memref.size;
+    keyParam.id = TEE_Malloc(keyParam.idLen, 0);
+    if (!keyParam.id) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+    TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
+    keyParam.keySize = params[1].value.a;
+
+    IMSG("[bxq] cmd_key_sm2_dsa_gen 2, keyPair =  0x%02x", keyPair);
+    res = KeyGen(TEE_TYPE_SM2_DSA_KEYPAIR, keyParam, &keyPair);
+    IMSG("[bxq] cmd_key_sm2_dsa_gen 3, keyPair =  0x%02x", keyPair);
+
+    return res;
 }
 
 static TEE_Result cmd_key_buffer_get(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
@@ -182,7 +245,7 @@ static TEE_Result cmd_crypto_rsa_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     }
 
     /* Return the number of byte effectively filled */
-	params[2].memref.size = out.len;
+    params[2].memref.size = out.len;
 
     return res;
 }
@@ -281,6 +344,115 @@ static TEE_Result cmd_crypto_aes_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     return res;
 }
 
+
+
+
+
+
+static TEE_Result cmd_key_sm2_pke_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+    KEY_PARAM keyParam;
+    TEE_ObjectHandle key;
+
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                                            TEE_PARAM_TYPE_NONE);
+    if (pt != exp_pt) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    IMSG("[bxq] cmd_key_sm2_pke_enc 1");
+    keyParam.idLen = params[0].memref.size;
+    keyParam.id = TEE_Malloc(keyParam.idLen, 0);
+    if (!keyParam.id) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+    TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
+
+    res = KeyRestore(keyParam.id, keyParam.idLen, &key);
+    if(res != TEE_SUCCESS) {
+        EMSG("cmd_key_sm2_pke_enc() fail. res = %x.\n", res);
+    }
+
+    IMSG("[bxq] cmd_key_sm2_pke_enc 2");
+    BUFFER in;
+    BUFFER out;
+    in.len = params[1].memref.size;
+    in.data = params[1].memref.buffer;
+    out.len = params[2].memref.size;
+    out.data = params[2].memref.buffer;
+
+    res = sm2_enc(key, in.data, in.len, out.data, &out.len);
+    if(res != TEE_SUCCESS) {
+        EMSG("cmd_key_sm2_pke_enc fail. res = %x.\n", res);
+    }
+
+    IMSG("[bxq] cmd_key_sm2_pke_enc 3, res = 0x%x", res);
+
+    /* Return the number of byte effectively filled */
+    params[2].memref.size = out.len;
+
+    return res;
+}
+
+
+static TEE_Result cmd_key_sm2_pke_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+    KEY_PARAM keyParam;
+    TEE_ObjectHandle key;
+
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                                            TEE_PARAM_TYPE_NONE);
+    if (pt != exp_pt) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    IMSG("[bxq] cmd_key_sm2_pke_dec 1");
+    keyParam.idLen = params[0].memref.size;
+    keyParam.id = TEE_Malloc(keyParam.idLen, 0);
+    if (!keyParam.id) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+    TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
+
+    res = KeyRestore(keyParam.id, keyParam.idLen, &key);
+    if(res != TEE_SUCCESS) {
+        EMSG("cmd_key_sm2_pke_dec() fail. res = %x.\n", res);
+    }
+
+    BUFFER in;
+    BUFFER out;
+    in.len = params[1].memref.size;
+    in.data = params[1].memref.buffer;
+    out.len = params[2].memref.size;
+    out.data = params[2].memref.buffer;
+
+    // res = Sm2Dec(key, in.data, in.len, out.data, &out.len);
+    // if(res != TEE_SUCCESS) {
+    //     EMSG("cmd_key_sm2_pke_dec fail. res = %x.\n", res);
+    // }
+
+    /* Return the number of byte effectively filled */
+    params[2].memref.size = out.len;
+
+    return res;
+}
+
+static TEE_Result cmd_key_sm2_dsa_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    return TEE_SUCCESS;
+}
+
+static TEE_Result cmd_key_sm2_dsa_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    return TEE_SUCCESS;
+}
+
 TEE_Result TA_CreateEntryPoint(void)
 {
 	IMSG("[bxq] TA_CreateEntryPoint");
@@ -344,6 +516,24 @@ TEE_Result TA_InvokeCommandEntryPoint(void __unused *session,
     case TA_CMD_CRYPTO_AES_DEC:
         IMSG("Command ID: TA_CMD_CRYPTO_AES_DEC");
         return cmd_crypto_aes_dec(param_types, params);
+    case TA_CMD_KEY_SM2_PKE_GEN:
+        IMSG("Command ID: TA_CMD_KEY_SM2_PKE_GEN");
+        return cmd_key_sm2_pke_gen(param_types, params);
+    case TA_CMD_KEY_SM2_DSA_GEN:
+        IMSG("Command ID: TA_CMD_KEY_SM2_DSA_GEN");
+        return cmd_key_sm2_dsa_gen(param_types, params);
+    case TA_CMD_CRYPTO_SM2_PKE_ENC:
+        IMSG("Command ID: TA_CMD_CRYPTO_SM2_PKE_ENC");
+        return cmd_key_sm2_pke_enc(param_types, params);
+    case TA_CMD_CRYPTO_SM2_PKE_DEC:
+        IMSG("Command ID: TA_CMD_CRYPTO_SM2_PKE_DEC");
+        return cmd_key_sm2_pke_dec(param_types, params);
+    case TA_CMD_CRYPTO_SM2_DSA_ENC:
+        IMSG("Command ID: TA_CMD_CRYPTO_SM2_DSA_ENC");
+        return cmd_key_sm2_dsa_enc(param_types, params);
+    case TA_CMD_CRYPTO_SM2_DSA_DEC:
+        IMSG("Command ID: TA_CMD_CRYPTO_SM2_DSA_DEC");
+        return cmd_key_sm2_dsa_dec(param_types, params);
     default:
         EMSG("Command ID 0x%x is not supported", command);
         return TEE_ERROR_NOT_SUPPORTED;

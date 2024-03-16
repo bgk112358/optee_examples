@@ -37,15 +37,25 @@ int32_t TeecInit();
 
 int32_t KeyAesGen(uint8_t *id, uint32_t idLen, uint32_t keyLen, BUFFER iv);
 int32_t KeyRsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen);
+int32_t KeySm2PkeGen(uint8_t *id, uint32_t idLen, uint32_t keyLen);
+int32_t KeySm2DsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen);
 int32_t KeyBufferGetByID(const uint8_t *id, uint32_t idLen, void *buffer, uint32_t *size);
 
 int32_t StoreWrite(uint8_t *name, uint32_t nameLen, void *buffer, uint32_t len);
 int32_t StoreRead(uint8_t *name, uint32_t nameLen, void **buffer, uint32_t *size);
 
+int32_t CryptoAesEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
+int32_t CryptoAesDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
+
 int32_t CryptoRsaEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
 int32_t CryptoRsaDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
 int32_t CryptoRsaSign(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *signature);
 int32_t CryptoRsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digest, BUFFER *signature);
+
+int32_t CryptoSm2PkeEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
+int32_t CryptoSm2PkeDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
+int32_t CryptoSm2DsaSign(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *signature);
+int32_t CryptoSm2DsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digest, BUFFER *signature);
 
 int32_t CerCsrCreate(uint8_t *id, uint32_t idLen, void *DN, uint32_t *size);
 

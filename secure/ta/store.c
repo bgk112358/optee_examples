@@ -22,14 +22,14 @@ TEE_Result Store_WriteKey(const uint8_t *keyID, uint32_t keyIDLen,
         }
     }
 
-    IMSG("[bxq] secure_cmd_gen_key 11");
+    IMSG("[bxq] Store_WriteKey 1");
     res = TEE_WriteObjectData(object, keyAttr, keyAttrLen);
     if (res != TEE_SUCCESS) {
         EMSG("TEE_WriteObjectData failed 0x%08x", res);
         TEE_CloseAndDeletePersistentObject1(object);
         return res;
     } else {
-        IMSG("[bxq] secure_cmd_gen_key 12");
+        IMSG("[bxq] Store_WriteKey 2");
         TEE_CloseObject(object);
     }
 
@@ -86,9 +86,9 @@ TEE_Result Store_ReadKey(const uint8_t *keyID, uint32_t keyIDLen,
 	}
 
     IMSG_RAW("[bxq] Store_ReadKey 6, readBytes = %d, key_attr: ", readBytes);
-    for (size_t j = 0; j < readBytes; j++) {
-        IMSG_RAW("0x%02x ", *(data + j));
-    }
+    // for (size_t j = 0; j < readBytes; j++) {
+    //     IMSG_RAW("0x%02x ", *(data + j));
+    // }
     IMSG("end Store_ReadKey");
 
     IMSG_RAW("[bxq] Store_ReadKey 7, data = 0x%p", data);

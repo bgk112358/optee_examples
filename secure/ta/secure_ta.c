@@ -645,9 +645,9 @@ static TEE_Result secure_cmd_gen_key(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
         }
 
         IMSG_RAW("[bxq] key_attr: ");
-        for (size_t j = 0; j < buff_len; j++) {
-            IMSG_RAW("0x%02x ", *(buff + j));
-        }
+        // for (size_t j = 0; j < buff_len; j++) {
+        //     IMSG_RAW("0x%02x ", *(buff + j));
+        // }
         IMSG("end");
 
         IMSG("[bxq] secure_cmd_gen_key 11");
