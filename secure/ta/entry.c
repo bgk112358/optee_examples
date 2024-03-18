@@ -432,10 +432,10 @@ static TEE_Result cmd_key_sm2_pke_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARA
     out.len = params[2].memref.size;
     out.data = params[2].memref.buffer;
 
-    // res = Sm2Dec(key, in.data, in.len, out.data, &out.len);
-    // if(res != TEE_SUCCESS) {
-    //     EMSG("cmd_key_sm2_pke_dec fail. res = %x.\n", res);
-    // }
+    res = sm2_dec(key, in.data, in.len, out.data, &out.len);
+    if(res != TEE_SUCCESS) {
+        EMSG("cmd_key_sm2_pke_dec fail. res = %x.\n", res);
+    }
 
     /* Return the number of byte effectively filled */
     params[2].memref.size = out.len;
