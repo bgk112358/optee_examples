@@ -107,6 +107,24 @@ int32_t read_file(uint8_t *buf, int32_t *len)
 	return nread;
 }
 
+int32_t KeySm4Gen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_VALUE_INPUT,
+                                     TEEC_NONE,
+                                     TEEC_NONE);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].value.a = keyLen;
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_SM4_GEN, &op, &eo);
+    return 0;
+}
+
 int32_t KeySm2PkeGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
 {
     TEEC_Result res;
@@ -125,7 +143,6 @@ int32_t KeySm2PkeGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
     return 0;
 }
 
-
 int32_t KeySm2DsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
 {
     TEEC_Result res;
@@ -143,7 +160,6 @@ int32_t KeySm2DsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
     res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_SM2_DSA_GEN, &op, &eo);
     return 0;
 }
-
 
 int32_t KeyAesGen(uint8_t *id, uint32_t idLen, uint32_t keyLen, BUFFER iv)
 {
@@ -323,7 +339,7 @@ int32_t CryptoAesEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
 
     printf("[bxq] 2 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
 
-    printf("[bxq] ENC root%s: ", id);
+    printf("[bxq] AES ENC %s: ", id);
     for (uint32_t n = 0; n < op.params[2].tmpref.size; n++) {
         printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
     }
@@ -359,9 +375,8 @@ int32_t CryptoAesDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
         teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_AES_ENC)");
     }
     printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
-    
 
-    printf("[bxq] DEC %s: ", id);
+    printf("[bxq] AES DEC %s: ", id);
     for (uint32_t n = 0; n < op.params[2].tmpref.size; n++) {
         printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
     }
@@ -443,6 +458,82 @@ int32_t CryptoSm2PkeDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER 
     return 0;
 }
 
+int32_t CryptoSm4Enc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
+{
+    TEEC_Result res;
+    const uint32_t aesBlockSize = 16;   // Bytes -> 128bits
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_OUTPUT,
+                                     TEEC_NONE);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].tmpref.buffer = inbuf.data;
+    op.params[1].tmpref.size = inbuf.len;
+    op.params[2].tmpref.size = ((uint32_t)ceil(inbuf.len / aesBlockSize)) * aesBlockSize + aesBlockSize;
+    printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+    op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_SM4_ENC, &op, &eo);
+    if (res != TEEC_SUCCESS) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_SM4_ENC)");
+    }
+
+    printf("[bxq] 2 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+
+    printf("[bxq] SM4 ENC %s: ", id);
+    for (uint32_t n = 0; n < op.params[2].tmpref.size; n++) {
+        printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
+    }
+    printf("\n");
+
+    outbuf->data = op.params[2].tmpref.buffer;
+    outbuf->len = op.params[2].tmpref.size;
+    
+    printf("CryptoSm4Enc end\n");
+    return 0;
+}
+
+int32_t CryptoSm4Dec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_OUTPUT,
+                                     TEEC_NONE);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].tmpref.buffer = inbuf.data;
+    op.params[1].tmpref.size = inbuf.len;
+    op.params[2].tmpref.size = inbuf.len;
+    printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+    op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_SM4_ENC, &op, &eo);
+    if (res != TEEC_SUCCESS) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_SM4_ENC)");
+    }
+    printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
+
+    printf("[bxq] SM4 DEC %s: ", id);
+    for (uint32_t n = 0; n < op.params[2].tmpref.size; n++) {
+        printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
+    }
+    printf("\n");
+
+    outbuf->data = op.params[2].tmpref.buffer;
+    outbuf->len = op.params[2].tmpref.size;
+    
+    printf("CryptoSm4Dec end\n");
+    return 0;
+}
+
 int32_t TeecInit()
 {
     TEEC_Result res;
@@ -471,15 +562,14 @@ main(int argc, char *argv[])
 
     int32_t res = TeecInit();
 
-    // const uint8_t rsa_key[] = "rsakey01";
-    // res = KeyRsaGen(rsa_key, sizeof(rsa_key), key_size);
-
     BUFFER in;
     BUFFER out;
     BUFFER ori;
     in.data = inbuf;
     in.len = inbuf_len;
 
+    // const uint8_t rsa_key[] = "rsakey01";
+    // res = KeyRsaGen(rsa_key, sizeof(rsa_key), key_size);
     // res = CryptoRsaEnc(rsa_key, sizeof(rsa_key), in, &out);
     // res = CryptoRsaDec(rsa_key, sizeof(rsa_key), out, &ori);
     // printf("[bxq] rsa ori: %s \n", ori.data);
@@ -498,7 +588,6 @@ main(int argc, char *argv[])
     // iv.len = 16;
 
     // res = KeyAesGen(aes_key, sizeof(aes_key), key_size, iv);
-
     // res = CryptoAesEnc(aes_key, sizeof(aes_key), in, &out);
     // res = CryptoAesDec(aes_key, sizeof(aes_key), out, &ori);
 
@@ -508,20 +597,29 @@ main(int argc, char *argv[])
     // free(ori.data);
     // ori.len = 0;
 
-    const uint8_t sm2_pke_key[] = "sm2pkekey01";
-    const uint8_t sm2_dsa_key[] = "sm2dsakey01";
-    res = KeySm2PkeGen(sm2_pke_key, sizeof(sm2_pke_key), key_size);
-    // res = KeySm2DsaGen(sm2_dsa_key, sizeof(sm2_dsa_key), key_size);
+    // const uint8_t sm2_pke_key[] = "sm2pkekey01";
+    // const uint8_t sm2_dsa_key[] = "sm2dsakey01";
+    // res = KeySm2PkeGen(sm2_pke_key, sizeof(sm2_pke_key), key_size);
+    // // res = KeySm2DsaGen(sm2_dsa_key, sizeof(sm2_dsa_key), key_size);
+    // res = CryptoSm2PkeEnc(sm2_pke_key, sizeof(sm2_pke_key), in, &out);
+    // printf("[bxq] CryptoSm2PkeEnc outbuf, size = %d: ", out.len);
+    // for (uint32_t n = 0; n < out.len; n++) {
+    //     printf("%02x ", out.data[n]);
+    // }
+    // printf("\n");
+    // res = CryptoSm2PkeDec(sm2_pke_key, sizeof(sm2_pke_key), out, &ori);
+    // printf("[bxq] sm2 ori: %s \n", ori.data);
 
-    res = CryptoSm2PkeEnc(sm2_pke_key, sizeof(sm2_pke_key), in, &out);
 
-    printf("[bxq] CryptoSm2PkeEnc outbuf, size = %d: ", out.len);
+    const uint8_t sm4_key[] = "sm4key01";
+    res = KeySm4Gen(sm4_key, sizeof(sm4_key), key_size);
+    res = CryptoSm4Enc(sm4_key, sizeof(sm4_key), in, &out);
+    printf("[bxq] CryptoSm4Enc outbuf, size = %d: ", out.len);
     for (uint32_t n = 0; n < out.len; n++) {
         printf("%02x ", out.data[n]);
     }
     printf("\n");
-    
-    res = CryptoSm2PkeDec(sm2_pke_key, sizeof(sm2_pke_key), out, &ori);
-
+    res = CryptoSm4Dec(sm4_key, sizeof(sm4_key), out, &ori);
     printf("[bxq] sm2 ori: %s \n", ori.data);
+
 }
