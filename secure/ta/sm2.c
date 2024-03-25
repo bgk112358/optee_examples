@@ -41,8 +41,6 @@ static TEE_Result sm2_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 	TEE_OperationHandle op;
 	TEE_ObjectInfo key_info;
 	uint32_t alg = 0;
-	
-	EMSG("%s enter", __func__);
 
 	if (!key)
 		return TEE_ERROR_BAD_STATE;
@@ -65,8 +63,6 @@ static TEE_Result sm2_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 			break;
 	}
 
-    EMSG("%s key_info, keySize = %d, objectSize = %d, maxKeySize = %d, maxObjectSize = %d, dataSize = %d", __func__,
-        key_info.keySize, key_info.objectSize, key_info.maxKeySize, key_info.maxObjectSize, key_info.dataSize);
 	res = TEE_AllocateOperation(&op, alg, mode, key_info.maxKeySize);
 	if (res) {
 		EMSG("TEE_AllocateTransientObject error! res=0x%x", res);
@@ -110,9 +106,7 @@ static TEE_Result sm2_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 
 	TEE_FreeOperation(op);
 	
-	EMSG("%s exit", __func__);
 	return res;
-
 }
 
 #define SM2(name1,name2) \
