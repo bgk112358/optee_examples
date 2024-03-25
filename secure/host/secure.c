@@ -238,10 +238,9 @@ int32_t CryptoRsaEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
         teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_ENC)");
     }
 
-    printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
     op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
     if (!op.params[2].tmpref.buffer) {
-        err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
+        teec_err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
     }
 
     res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_RSA_ENC, &op, &eo);
@@ -249,17 +248,10 @@ int32_t CryptoRsaEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
         teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_ENC)");
     }
 
-    printf("[bxq] %s: ", id);
-    for (uint32_t n = 0; n < op.params[2].tmpref.size; n++) {
-        printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
-    }
-    printf("\n");
-    write_file((uint8_t *)op.params[2].tmpref.buffer, op.params[2].tmpref.size);
-
     outbuf->data = op.params[2].tmpref.buffer;
     outbuf->len = op.params[2].tmpref.size;
     
-    printf("CryptoRsaEnc end\n");
+    // free(op.params[2].tmpref.buffer);
     return 0;
 }
 
@@ -285,10 +277,9 @@ int32_t CryptoRsaDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
         teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_DEC)");
     }
 
-    printf("[bxq] 1 op.params[2].tmpref.size = %d \n" , op.params[2].tmpref.size);
     op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
     if (!op.params[2].tmpref.buffer) {
-        err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
+        teec_err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
     }
 
     res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_RSA_DEC, &op, &eo);
@@ -296,20 +287,10 @@ int32_t CryptoRsaDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
         teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_DEC)");
     }
 
-    printf("[bxq] dec_data %s: ", id);
-    for (uint32_t n = 0; n < op.params[2].tmpref.size; n++) {
-        printf("%02x ", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
-    }
-    printf("\n");
-    printf("[bxq] dec_data %s: ", id);
-    for (uint32_t n = 0; n < op.params[2].tmpref.size; n++)
-        printf("%c", ((uint8_t *)op.params[2].tmpref.buffer)[n]);
-    printf("\n");
-
-    // free(op.params[2].tmpref.buffer);
     outbuf->data = op.params[2].tmpref.buffer;
     outbuf->len = op.params[2].tmpref.size;
-    
+
+    // free(op.params[2].tmpref.buffer);
     return 0;
 }
 
@@ -553,20 +534,20 @@ int32_t TeecInit()
     return 0;
 }
 
-main(int argc, char *argv[])
-{
-	void *inbuf;
-	size_t inbuf_len;
-    size_t key_size;
-	get_args(argc, argv, &key_size, &inbuf, &inbuf_len);
+// main(int argc, char *argv[])
+// {
+// 	void *inbuf;
+// 	size_t inbuf_len;
+//     size_t key_size;
+// 	get_args(argc, argv, &key_size, &inbuf, &inbuf_len);
 
-    int32_t res = TeecInit();
+//     int32_t res = TeecInit();
 
-    BUFFER in;
-    BUFFER out;
-    BUFFER ori;
-    in.data = inbuf;
-    in.len = inbuf_len;
+//     BUFFER in;
+//     BUFFER out;
+//     BUFFER ori;
+//     in.data = inbuf;
+//     in.len = inbuf_len;
 
     // const uint8_t rsa_key[] = "rsakey01";
     // res = KeyRsaGen(rsa_key, sizeof(rsa_key), key_size);
@@ -611,15 +592,48 @@ main(int argc, char *argv[])
     // printf("[bxq] sm2 ori: %s \n", ori.data);
 
 
-    const uint8_t sm4_key[] = "sm4key01";
-    res = KeySm4Gen(sm4_key, sizeof(sm4_key), key_size);
-    res = CryptoSm4Enc(sm4_key, sizeof(sm4_key), in, &out);
-    printf("[bxq] CryptoSm4Enc outbuf, size = %d: ", out.len);
-    for (uint32_t n = 0; n < out.len; n++) {
-        printf("%02x ", out.data[n]);
-    }
-    printf("\n");
-    res = CryptoSm4Dec(sm4_key, sizeof(sm4_key), out, &ori);
-    printf("[bxq] sm2 ori: %s \n", ori.data);
+    // const uint8_t sm4_key[] = "sm4key01";
+    // res = KeySm4Gen(sm4_key, sizeof(sm4_key), key_size);
+    // res = CryptoSm4Enc(sm4_key, sizeof(sm4_key), in, &out);
+    // printf("[bxq] CryptoSm4Enc outbuf, size = %d: ", out.len);
+    // for (uint32_t n = 0; n < out.len; n++) {
+    //     printf("%02x ", out.data[n]);
+    // }
+    // printf("\n");
+    // res = CryptoSm4Dec(sm4_key, sizeof(sm4_key), out, &ori);
+    // printf("[bxq] sm2 ori: %s \n", ori.data);
 
+// }
+
+
+main(int argc, char *argv[])
+{
+    void *inbuf;
+    size_t inbuf_len;
+    size_t key_size;
+    get_args(argc, argv, &key_size, &inbuf, &inbuf_len);
+
+    int32_t res = TeecInit();
+
+    BUFFER in;
+    BUFFER out;
+    BUFFER ori;
+    in.data = inbuf;
+    in.len = inbuf_len;
+
+    
+    const uint8_t rsa_key[] = "rsakey01";
+    res = KeyRsaGen(rsa_key, sizeof(rsa_key), key_size);
+    for (size_t i = 0; i < 1000000; i++) {
+        res = CryptoRsaEnc(rsa_key, sizeof(rsa_key), in, &out);
+        *(uint8_t *)(in.data) += 1u;
+
+        res = CryptoRsaDec(rsa_key, sizeof(rsa_key), out, &ori);
+        printf("ori, i = %d: %s \n", i, ori.data);
+
+        free(out.data);
+        out.len = 0;
+        free(ori.data);
+        ori.len = 0;
+    }
 }
