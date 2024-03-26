@@ -49,13 +49,13 @@ int32_t CryptoAesDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
 
 int32_t CryptoRsaEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
 int32_t CryptoRsaDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
-int32_t CryptoRsaSign(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *signature);
-int32_t CryptoRsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digest, BUFFER *signature);
+int32_t CryptoRsaSign(uint8_t *id, uint32_t idLen, const BUFFER digestIn, BUFFER *signOut);
+int32_t CryptoRsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digestIn, BUFFER signIn);
 
 int32_t CryptoSm2PkeEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
 int32_t CryptoSm2PkeDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf);
-int32_t CryptoSm2DsaSign(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *signature);
-int32_t CryptoSm2DsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digest, BUFFER *signature);
+int32_t CryptoSm2DsaSign(uint8_t *id, uint32_t idLen, const BUFFER digestIn, BUFFER *signOut);
+int32_t CryptoSm2DsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digestIn, BUFFER signIn);
 
 int32_t CerCsrCreate(uint8_t *id, uint32_t idLen, void *DN, uint32_t *size);
 

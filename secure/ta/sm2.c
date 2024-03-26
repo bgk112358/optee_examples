@@ -98,9 +98,9 @@ static TEE_Result sm2_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 			break;
 		case TEE_MODE_VERIFY:
 			res = TEE_AsymmetricVerifyDigest(op, NULL, 0, inbuf, inbuf_len, outbuf, *outbuf_len);
-			if (res) {
-				EMSG("TEE_AsymmetricVerifyDigest error! res=0x%x", res);
-			}
+			if (res != TEE_SUCCESS && res != TEE_ERROR_SIGNATURE_INVALID) {
+                EMSG("TEE_AsymmetricVerifyDigest error! res=0x%x", res);
+            }
 			break;
 	}
 

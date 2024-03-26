@@ -122,7 +122,7 @@ int32_t KeySm4Gen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
 
     uint32_t eo;
     res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_SM4_GEN, &op, &eo);
-    return 0;
+    return res;
 }
 
 int32_t KeySm2PkeGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
@@ -140,7 +140,7 @@ int32_t KeySm2PkeGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
 
     uint32_t eo;
     res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_SM2_PKE_GEN, &op, &eo);
-    return 0;
+    return res;
 }
 
 int32_t KeySm2DsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
@@ -158,7 +158,7 @@ int32_t KeySm2DsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
 
     uint32_t eo;
     res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_SM2_DSA_GEN, &op, &eo);
-    return 0;
+    return res;
 }
 
 int32_t KeyAesGen(uint8_t *id, uint32_t idLen, uint32_t keyLen, BUFFER iv)
@@ -178,7 +178,7 @@ int32_t KeyAesGen(uint8_t *id, uint32_t idLen, uint32_t keyLen, BUFFER iv)
 
     uint32_t eo;
     res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_AES_GEN, &op, &eo);
-    return 0;
+    return res;
 }
 
 int32_t KeyRsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
@@ -196,7 +196,7 @@ int32_t KeyRsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen)
 
     uint32_t eo;
     res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_RSA_GEN, &op, &eo);
-    return 0;
+    return res;
 }
 
 int32_t KeyBufferGetByID(const uint8_t *id, uint32_t idLen, void *buffer, uint32_t *size)
@@ -213,7 +213,7 @@ int32_t KeyBufferGetByID(const uint8_t *id, uint32_t idLen, void *buffer, uint32
 
     uint32_t eo;
     res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_KEY_BUFFER_GET, &op, &eo);
-    return 0;
+    return res;
 }
 
 int32_t CryptoRsaEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
@@ -252,7 +252,7 @@ int32_t CryptoRsaEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
     outbuf->data = op.params[2].tmpref.buffer;
     outbuf->len = op.params[2].tmpref.size;
 
-    return 0;
+    return res;
 }
 
 int32_t CryptoRsaDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
@@ -291,7 +291,69 @@ int32_t CryptoRsaDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
     outbuf->data = op.params[2].tmpref.buffer;
     outbuf->len = op.params[2].tmpref.size;
 
-    return 0;
+    return res;
+}
+
+int32_t CryptoRsaSign(uint8_t *id, uint32_t idLen, const BUFFER digestIn, BUFFER *signOut)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_OUTPUT,
+                                     TEEC_NONE);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].tmpref.buffer = digestIn.data;
+    op.params[1].tmpref.size = digestIn.len;
+    op.params[2].tmpref.buffer = NULL;
+    op.params[2].tmpref.size = 0;
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_RSA_SIGN, &op, &eo);
+    if (res != TEEC_SUCCESS && res != TEEC_ERROR_SHORT_BUFFER) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_SIGN) 1 ");
+    }
+
+    // 外部free
+    op.params[2].tmpref.buffer = malloc(op.params[2].tmpref.size);
+    if (!op.params[2].tmpref.buffer) {
+        teec_err(1, "Cannot allocate out buffer of size %zu", op.params[2].tmpref.size);
+    }
+
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_RSA_SIGN, &op, &eo);
+    if (res != TEEC_SUCCESS) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_SIGN) 2 ");
+    }
+
+    signOut->data = op.params[2].tmpref.buffer;
+    signOut->len = op.params[2].tmpref.size;
+    return res;
+}
+
+int32_t CryptoRsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digestIn, BUFFER signIn)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_VALUE_OUTPUT);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].tmpref.buffer = digestIn.data;
+    op.params[1].tmpref.size = digestIn.len;
+    op.params[2].tmpref.buffer = signIn.data;
+    op.params[2].tmpref.size = signIn.len;
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_RSA_VERIFY, &op, &eo);
+    if (res != TEEC_SUCCESS) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_RSA_VERIFY)");
+    }
+    return op.params[3].value.a;
 }
 
 int32_t CryptoAesEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
@@ -330,7 +392,7 @@ int32_t CryptoAesEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
     outbuf->len = op.params[2].tmpref.size;
     
     printf("CryptoAesEnc end\n");
-    return 0;
+    return res;
 }
 
 int32_t CryptoAesDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
@@ -367,7 +429,7 @@ int32_t CryptoAesDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
     outbuf->len = op.params[2].tmpref.size;
     
     printf("CryptoAesDec end\n");
-    return 0;
+    return res;
 }
 
 int32_t CryptoSm2PkeEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
@@ -398,7 +460,7 @@ int32_t CryptoSm2PkeEnc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER 
     outbuf->len = op.params[2].tmpref.size;
 
     // free(op.params[2].tmpref.buffer);
-    return 0;
+    return res;
 }
 
 int32_t CryptoSm2PkeDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
@@ -428,7 +490,63 @@ int32_t CryptoSm2PkeDec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER 
     outbuf->data = op.params[2].tmpref.buffer;
     outbuf->len = op.params[2].tmpref.size;
 
-    return 0;
+    return res;
+}
+
+int32_t CryptoSm2DsaSign(uint8_t *id, uint32_t idLen, const BUFFER digestIn, BUFFER *signOut)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_OUTPUT,
+                                     TEEC_NONE);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].tmpref.buffer = digestIn.data;
+    op.params[1].tmpref.size = digestIn.len;
+
+    // 外部free
+    const uint32_t sm2SignatureLen = 64u;
+    op.params[2].tmpref.buffer = malloc(sm2SignatureLen);
+    op.params[2].tmpref.size = sm2SignatureLen;
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_SM2_DSA_SIGN, &op, &eo);
+    if (res != TEEC_SUCCESS) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_SM2_DSA_SIGN)");
+    }
+
+    signOut->data = op.params[2].tmpref.buffer;
+    signOut->len = op.params[2].tmpref.size;
+
+    // free(op.params[2].tmpref.buffer);
+    return res;
+}
+
+int32_t CryptoSm2DsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digestIn, BUFFER signIn)
+{
+    TEEC_Result res;
+    TEEC_Operation op;
+    memset(&op, 0, sizeof(op));
+    op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_MEMREF_TEMP_INPUT,
+                                     TEEC_VALUE_OUTPUT);
+    op.params[0].tmpref.buffer = id;
+    op.params[0].tmpref.size = idLen;
+    op.params[1].tmpref.buffer = digestIn.data;
+    op.params[1].tmpref.size = digestIn.len;
+    op.params[2].tmpref.buffer = signIn.data;
+    op.params[2].tmpref.size = signIn.len;
+
+    uint32_t eo;
+    res = TEEC_InvokeCommand(&teeHdl.sess, TA_CMD_CRYPTO_SM2_DSA_VERIFY, &op, &eo);
+    if (res != TEEC_SUCCESS) {
+        teec_err(res, eo, "TEEC_InvokeCommand(TA_CMD_CRYPTO_SM2_DSA_VERIFY)");
+    }
+    return op.params[3].value.a;
 }
 
 int32_t CryptoSm4Enc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
@@ -467,7 +585,7 @@ int32_t CryptoSm4Enc(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
     outbuf->len = op.params[2].tmpref.size;
     
     printf("CryptoSm4Enc end\n");
-    return 0;
+    return res;
 }
 
 int32_t CryptoSm4Dec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *outbuf)
@@ -504,7 +622,7 @@ int32_t CryptoSm4Dec(uint8_t *id, uint32_t idLen, const BUFFER inbuf, BUFFER *ou
     outbuf->len = op.params[2].tmpref.size;
     
     printf("CryptoSm4Dec end\n");
-    return 0;
+    return res;
 }
 
 int32_t TeecInit()
@@ -523,7 +641,7 @@ int32_t TeecInit()
         teec_err(res, eo, "TEEC_OpenSession(TEEC_LOGIN_PUBLIC)");
     }
 
-    return 0;
+    return res;
 }
 
 // main(int argc, char *argv[])
@@ -613,7 +731,7 @@ main(int argc, char *argv[])
     in.data = inbuf;
     in.len = inbuf_len;
 
-#if 0
+#if 0   // rsa enc/dec
     uint32_t keySize = 3072;
     const uint8_t rsa_key[] = "rsakey";
     res = KeyRsaGen(rsa_key, sizeof(rsa_key), keySize);
@@ -631,7 +749,39 @@ main(int argc, char *argv[])
     }
 #endif
 
-#if 1
+#if 0   // rsa sign/verify
+    BUFFER digestIn;
+    BUFFER signOut;
+    // sha256
+    uint8_t data[32 + 1] = "asdfghjkl12345678kjhgfdsa87654321";
+    digestIn.data = data;
+    digestIn.len = 32;
+
+    signOut.data = (uint8_t *)malloc(32);
+    signOut.len = 32;
+
+    uint32_t keySize = 3072;
+    const uint8_t rsa_key[] = "rsaSignKey";
+    res = KeyRsaGen(rsa_key, sizeof(rsa_key), keySize);
+    for (size_t i = 0; i < 10000; i++) {
+        res = CryptoRsaSign(rsa_key, sizeof(rsa_key), digestIn, &signOut);
+        if (i % 5 == 0) {
+            ((uint8_t *)(signOut.data))[100] += 1u;
+        }
+        res = CryptoRsaVerify(rsa_key, sizeof(rsa_key), digestIn, signOut);
+        if(res == 0) {
+            printf("rsa verify pass, i = %d, %s\n", i, digestIn.data);
+        } else {
+            printf("rsa verify failed, i = %d, %s\n", i, digestIn.data);
+        }
+        *(uint8_t *)(digestIn.data) += 1u;
+    }
+
+    free(signOut.data);
+    signOut.len = 0;
+#endif
+
+#if 0   // sm2 enc/dec
     uint32_t keySize = 256;
     const uint8_t sm2_pke_key[] = "sm2pkekey";
     res = KeySm2PkeGen(sm2_pke_key, sizeof(sm2_pke_key), keySize);
@@ -648,4 +798,37 @@ main(int argc, char *argv[])
         ori.len = 0;
     }
 #endif
+
+#if 1   // sm2 sign/verify
+    BUFFER digestIn;
+    BUFFER signOut;
+    // sm3
+    uint8_t data[32 + 1] = "asdfghjkl12345678kjhgfdsa87654321";
+    digestIn.data = data;
+    digestIn.len = 32;
+
+    signOut.data = (uint8_t *)malloc(32);
+    signOut.len = 32;
+
+    uint32_t keySize = 256;
+    const uint8_t sm2_dsa_key[] = "sm2dsakey";
+    res = KeySm2DsaGen(sm2_dsa_key, sizeof(sm2_dsa_key), keySize);
+    for (size_t i = 0; i < 100000; i++) {
+        res = CryptoSm2DsaSign(sm2_dsa_key, sizeof(sm2_dsa_key), digestIn, &signOut);
+        if (i % 5 == 0) {
+            ((uint8_t *)(signOut.data))[10] += 1u;
+        }
+        res = CryptoSm2DsaVerify(sm2_dsa_key, sizeof(sm2_dsa_key), digestIn, signOut);
+        if(res == 0) {
+            printf("sm2 dsa verify pass, i = %d, %s\n", i, digestIn.data);
+        } else {
+            printf("sm2 dsa verify failed, i = %d, %s\n", i, digestIn.data);
+        }
+        *(uint8_t *)(digestIn.data) += 1u;
+    }
+
+    free(signOut.data);
+    signOut.len = 0;
+#endif
+
 }

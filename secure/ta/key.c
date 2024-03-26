@@ -396,13 +396,11 @@ TEE_Result KeyStore(KEY_PARAM keyParam, TEE_ObjectHandle keyPair)
     TEE_Result res;
     TEE_ObjectInfo info;
 
-    // IMSG("[bxq] KeyStore 1");
     res = TEE_GetObjectInfo1(keyPair, &info);
     if (res != TEE_SUCCESS) {
         EMSG("TEE_GetObjectInfo1() fail. res = %x.\n", res);
         return res;
     }
-    // IMSG("[bxq] KeyStore 2");
 
     if (info.objectType == TEE_TYPE_RSA_KEYPAIR) {
         res = KeyStoreRsa(keyParam.id, keyParam.idLen, keyPair);
@@ -560,37 +558,30 @@ TEE_Result KeyRestoreSm2Dsa(uint8_t *keyData, TEE_ObjectHandle *keyPair)
     TEE_MemMove(&key_attr, keyData, bufHeadLen);
 
     key_attr.data[0] = p;
-    for (size_t i = 0; i < RSA_ATTR_END - 1; i++) {
-        // IMSG("[bxq] KeyRestoreSm2Dsa 7.1.%d, len[%d] = %d", i, i, key_attr.len[i]);
+    for (size_t i = 0; i < ECC_ATTR_END - 1; i++) {
         p += key_attr.len[i];
         key_attr.data[i + 1] = p;
-        // IMSG("[bxq] KeyRestoreSm2Dsa 7.2.%d, p = 0x%02x", i, p);
     }
 
-    // IMSG("[bxq] KeyRestoreSm2Dsa 8");
-
-    // IMSG("[bxq] KeyRestoreSm2Dsa 9");
     TEE_InitRefAttribute(&attrs[0], TEE_ATTR_ECC_PUBLIC_VALUE_X, key_attr.data[ECC_PUBLIC_VALUE_X], key_attr.len[ECC_PUBLIC_VALUE_X]);
     TEE_InitRefAttribute(&attrs[1], TEE_ATTR_ECC_PUBLIC_VALUE_Y, key_attr.data[ECC_PUBLIC_VALUE_Y], key_attr.len[ECC_PUBLIC_VALUE_Y]);
     TEE_InitRefAttribute(&attrs[2], TEE_ATTR_ECC_PRIVATE_VALUE, key_attr.data[ECC_PRIVATE_VALUE], key_attr.len[ECC_PRIVATE_VALUE]);
 
-    // IMSG("[bxq] KeyRestoreSm2Dsa 10, key_attr.params[KEY_SIZE] = %d", key_attr.params[KEY_SIZE]);
     res = TEE_AllocateTransientObject(TEE_TYPE_SM2_DSA_KEYPAIR, key_attr.params[KEY_SIZE], &key);
     if(TEE_SUCCESS != res) {
         EMSG("TEE_AllocateTransientObject() fail. res = %x.\n", res);
         return res;
     }
 
-    // IMSG("[bxq] KeyRestoreSm2Dsa 11");
-    res = TEE_PopulateTransientObject(key, attrs, 8);
+    res = TEE_PopulateTransientObject(key, attrs, ECC_ATTR_END);
     if(TEE_SUCCESS != res){
         EMSG("TEE_PopulateTransientObject() fail. res = %x.\n", res);
+        TEE_FreeTransientObject(key);
         return res;
     }
 
     *keyPair = key;
-
-    return TEE_SUCCESS;
+    return res;
 }
 
 TEE_Result KeyRestoreSm4(uint8_t *keyData, TEE_ObjectHandle *keyPair)
@@ -643,7 +634,7 @@ TEE_Result KeyRestore(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle 
 
     res = Store_ReadKey(keyID, keyIDLen, &keyData, &keyDataLen, &code);
     if (res != TEE_SUCCESS) {
-        EMSG("Store_ReadKey fail. res = %x.\n", res);
+        EMSG("Store_ReadKey fail. res = %x.", res);
         return res;
     }
 

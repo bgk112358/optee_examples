@@ -157,15 +157,39 @@
 
 /*
 * in	params[0].memref  key id
-* in	params[1].memref  input
-* out	params[2].memref  output
+* in	params[1].memref  digest
+* out	params[2].memref  sign
 */
-#define TA_CMD_CRYPTO_SM2_DSA_ENC	17
+#define TA_CMD_CRYPTO_SM2_DSA_SIGN	17
+
 /*
 * in	params[0].memref  key id
-* in	params[1].memref  input
-* out	params[2].memref  output
+* in	params[1].memref  digest
+* in	params[2].memref  sign
+* out	params[1].value.a res
 */
-#define TA_CMD_CRYPTO_SM2_DSA_DEC	18
+#define TA_CMD_CRYPTO_SM2_DSA_VERIFY	18
+
+
+#define TA_CMD_KEY_SM4_GEN			19
+
+#define TA_CMD_CRYPTO_SM4_ENC		20
+
+#define TA_CMD_CRYPTO_SM4_DEC		21
+
+/*
+* in	params[0].memref  key id
+* in	params[1].memref  digest
+* out	params[2].memref  sign
+*/
+#define TA_CMD_CRYPTO_RSA_SIGN		22
+
+/*
+* in	params[0].memref  key id
+* in	params[1].memref  digest
+* in	params[2].memref  sign
+* out	params[1].value.a res
+*/
+#define TA_CMD_CRYPTO_RSA_VERIFY	23
 
 #endif /* __SECURE_H__ */
