@@ -17,7 +17,7 @@ TEE_Result RsaEncode(TEE_ObjectHandle keyPair, BUFFER in, BUFFER *out)
 		return res;
 	}
 
-    res = TEE_AllocateOperation(&operation, TEE_ALG_RSAES_PKCS1_V1_5, TEE_MODE_ENCRYPT, keyInfo.keySize);
+    res = TEE_AllocateOperation(&operation, TEE_ALG_RSAES_PKCS1_V1_5, TEE_MODE_ENCRYPT, keyInfo.objectSize);
     if(res != TEE_SUCCESS) {
         EMSG("TEE_AllocateOperation() fail. res = %x.\n", res);
         return res;
@@ -51,7 +51,7 @@ TEE_Result RsaDecode(TEE_ObjectHandle keyPair, BUFFER in, BUFFER *out)
         return res;
     }
 
-    res = TEE_AllocateOperation(&operation, TEE_ALG_RSAES_PKCS1_V1_5, TEE_MODE_DECRYPT, keyInfo.keySize);
+    res = TEE_AllocateOperation(&operation, TEE_ALG_RSAES_PKCS1_V1_5, TEE_MODE_DECRYPT, keyInfo.objectSize);
     if(res != TEE_SUCCESS) {
         EMSG("TEE_AllocateOperation() fail. res = %x.\n", res);
         return res;

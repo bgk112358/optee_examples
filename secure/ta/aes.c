@@ -106,7 +106,7 @@ TEE_Result AesEncode(TEE_ObjectHandle key, uint32_t mode, BUFFER in, BUFFER *out
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    switch (info.keySize)
+    switch (info.objectSize)
     {
     case 128:
         if (mode == TEE_ALG_AES_ECB_NOPAD) {
@@ -152,7 +152,7 @@ TEE_Result AesDecode(TEE_ObjectHandle key, uint32_t mode, BUFFER in, BUFFER *out
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    switch (info.keySize)
+    switch (info.objectSize)
     {
     case 128:
         if (mode == TEE_ALG_AES_ECB_NOPAD) {

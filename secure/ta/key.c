@@ -109,7 +109,7 @@ TEE_Result KeyStoreRsa(const uint8_t *keyID, uint32_t keyIDLen, TEE_ObjectHandle
         return res;
     }
     
-    key_attr.params[KEY_SIZE] = keyInfo.keySize;
+    key_attr.params[KEY_SIZE] = keyInfo.objectSize;
     key_attr.params[KEY_TYPE] = keyInfo.objectType;
 
     for (size_t i = 0; i < RSA_ATTR_END; i++) {
@@ -176,10 +176,10 @@ TEE_Result KeyStoreAes(KEY_PARAM keyParam, TEE_ObjectHandle key)
     // IMSG("[bxq] KeyStoreAes 2");
     
     TEE_MemFill(&key_attr, 0, sizeof(key_attr));
-    key_attr.params[KEY_SIZE] = keyInfo.keySize;
+    key_attr.params[KEY_SIZE] = keyInfo.objectSize;
     key_attr.params[KEY_TYPE] = keyInfo.objectType;
 
-    // IMSG("[bxq] KeyStoreAes 3, keySize = %d", key_attr.params[KEY_SIZE]);
+    // IMSG("[bxq] KeyStoreAes 3, objectSize = %d", key_attr.params[KEY_SIZE]);
 
 
     // IMSG("[bxq] KeyStoreAes 3.1.%d", AES_SECRET_VALUE);
@@ -254,7 +254,7 @@ TEE_Result KeyStoreSm2Pke(KEY_PARAM keyParam, TEE_ObjectHandle keyPair)
         return res;
     }
     
-    key_attr.params[KEY_SIZE] = keyInfo.keySize;
+    key_attr.params[KEY_SIZE] = keyInfo.objectSize;
     key_attr.params[KEY_TYPE] = keyInfo.objectType;
 
     for (size_t i = 0; i < ECC_ATTR_END; i++) {
@@ -326,10 +326,10 @@ TEE_Result KeyStoreSm4(KEY_PARAM keyParam, TEE_ObjectHandle key)
     // IMSG("[bxq] KeyStoreSm4 2");
     
     TEE_MemFill(&key_attr, 0, sizeof(key_attr));
-    key_attr.params[KEY_SIZE] = keyInfo.keySize;
+    key_attr.params[KEY_SIZE] = keyInfo.objectSize;
     key_attr.params[KEY_TYPE] = keyInfo.objectType;
 
-    // IMSG("[bxq] KeyStoreSm4 3, keySize = %d", key_attr.params[KEY_SIZE]);
+    // IMSG("[bxq] KeyStoreSm4 3, objectSize = %d", key_attr.params[KEY_SIZE]);
 
 
     // IMSG("[bxq] KeyStoreSm4 3.1.%d", SM4_SECRET_VALUE);
