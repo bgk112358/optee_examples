@@ -63,7 +63,7 @@ static TEE_Result sm2_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 			break;
 	}
 
-	res = TEE_AllocateOperation(&op, alg, mode, key_info.maxKeySize);
+	res = TEE_AllocateOperation(&op, alg, mode, key_info.maxObjectSize);
 	if (res) {
 		EMSG("TEE_AllocateTransientObject error! res=0x%x", res);
 		return res;
