@@ -6,3 +6,5 @@ srcs-y += rsa.c
 srcs-y += aes.c
 srcs-y += sm2.c
 srcs-y += sm4.c
+srcs-y += hash.c
+srcs-y += ecc.c

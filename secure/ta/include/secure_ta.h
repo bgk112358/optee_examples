@@ -24,8 +24,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef __SECURE_H__
-#define __SECURE_H__
+#ifndef __SECURE_TA_H__
+#define __SECURE_TA_H__
 
 /* UUID of the trusted application */
 #define TA_SECURE_UUID \
@@ -192,4 +192,9 @@
 */
 #define TA_CMD_CRYPTO_RSA_VERIFY	23
 
-#endif /* __SECURE_H__ */
+
+#define TA_CMD_CRYPTO_SM3			24
+
+#define TA_CMD_CRYPTO_SHA			25
+
+#endif /* __SECURE_TA_H__ */

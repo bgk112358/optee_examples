@@ -8,6 +8,7 @@
 #include <aes.h>
 #include <sm2.h>
 #include <sm4.h>
+#include <hash.h>
 
 
 static TEE_Result cmd_key_rsa_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
@@ -52,7 +53,6 @@ static TEE_Result cmd_key_aes_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    // IMSG("[bxq] cmd_key_aes_gen 1");
     keyParam.idLen = params[0].memref.size;
     keyParam.id = TEE_Malloc(keyParam.idLen, 0);
     if (!keyParam.id) {
@@ -62,10 +62,9 @@ static TEE_Result cmd_key_aes_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
     keyParam.keySize = params[1].value.a;
     TEE_MemMove(keyParam.iv, params[2].memref.buffer, params[2].memref.size);
 
-    // IMSG("[bxq] cmd_key_aes_gen 2, keyPair =  0x%02x", keyPair);
     res = KeyGen(TEE_TYPE_AES, keyParam, &keyPair);
-    // IMSG("[bxq] cmd_key_aes_gen 3, keyPair =  0x%02x", keyPair);
 
+    TEE_Free(keyParam.id);
     return res;
 }
 
@@ -111,7 +110,6 @@ static TEE_Result cmd_key_sm2_dsa_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARA
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    // IMSG("[bxq] cmd_key_sm2_dsa_gen 1");
     keyParam.idLen = params[0].memref.size;
     keyParam.id = TEE_Malloc(keyParam.idLen, 0);
     if (!keyParam.id) {
@@ -120,10 +118,9 @@ static TEE_Result cmd_key_sm2_dsa_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARA
     TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
     keyParam.keySize = params[1].value.a;
 
-    // IMSG("[bxq] cmd_key_sm2_dsa_gen 2, keyPair =  0x%02x", keyPair);
     res = KeyGen(TEE_TYPE_SM2_DSA_KEYPAIR, keyParam, &keyPair);
-    // IMSG("[bxq] cmd_key_sm2_dsa_gen 3, keyPair =  0x%02x", keyPair);
 
+    TEE_Free(keyParam.id);
     return res;
 }
 
@@ -141,7 +138,6 @@ static TEE_Result cmd_key_sm4_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    // IMSG("[bxq] cmd_key_sm4_gen 1");
     keyParam.idLen = params[0].memref.size;
     keyParam.id = TEE_Malloc(keyParam.idLen, 0);
     if (!keyParam.id) {
@@ -150,13 +146,11 @@ static TEE_Result cmd_key_sm4_gen(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
     TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
     keyParam.keySize = params[1].value.a;
 
-    // IMSG("[bxq] cmd_key_sm4_gen 2, keyPair =  0x%02x", keyPair);
     res = KeyGen(TEE_TYPE_SM4, keyParam, &keyPair);
-    // IMSG("[bxq] cmd_key_sm4_gen 3, keyPair =  0x%02x", keyPair);
 
+    TEE_Free(keyParam.id);
     return res;
 }
-
 
 static TEE_Result cmd_key_buffer_get(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
 {
@@ -416,7 +410,9 @@ static TEE_Result cmd_crypto_aes_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
 
     res = KeyRestore(keyParam.id, keyParam.idLen, &key);
     if(res != TEE_SUCCESS) {
-        EMSG("cmd_crypto_aes_enc() fail. res = %x.\n", res);
+        EMSG("KeyRestore() fail. res = %x.\n", res);
+        TEE_Free(keyParam.id);
+        return res;
     }
 
     BUFFER in;
@@ -428,12 +424,17 @@ static TEE_Result cmd_crypto_aes_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
 
     res = AesEncode(key, TEE_ALG_AES_CBC_NOPAD, in, &out);
     if(res != TEE_SUCCESS) {
-        EMSG("cmd_crypto_aes_enc fail. res = %x.\n", res);
+        EMSG("AesEncode fail. res = %x.\n", res);
+        TEE_FreeTransientObject(key);
+        TEE_Free(keyParam.id);
+        return res;
     }
 
     /* Return the number of byte effectively filled */
     params[2].memref.size = out.len;
 
+    TEE_FreeTransientObject(key);
+    TEE_Free(keyParam.id);
     return res;
 }
 
@@ -451,7 +452,6 @@ static TEE_Result cmd_crypto_aes_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    // IMSG("[bxq] cmd_crypto_aes_dec 1");
     keyParam.idLen = params[0].memref.size;
     keyParam.id = TEE_Malloc(keyParam.idLen, 0);
     if (!keyParam.id) {
@@ -461,7 +461,9 @@ static TEE_Result cmd_crypto_aes_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
 
     res = KeyRestore(keyParam.id, keyParam.idLen, &key);
     if(res != TEE_SUCCESS) {
-        EMSG("cmd_crypto_aes_dec() fail. res = %x.\n", res);
+        EMSG("KeyRestore() fail. res = %x.\n", res);
+        TEE_Free(keyParam.id);
+        return res;
     }
 
     BUFFER in;
@@ -473,12 +475,17 @@ static TEE_Result cmd_crypto_aes_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
 
     res = AesDecode(key, TEE_ALG_AES_CBC_NOPAD, in, &out);
     if(res != TEE_SUCCESS) {
-        EMSG("cmd_crypto_aes_dec fail. res = %x.\n", res);
+        EMSG("AesDecode fail. res = %x.\n", res);
+        TEE_FreeTransientObject(key);
+        TEE_Free(keyParam.id);
+        return res;
     }
 
     /* Return the number of byte effectively filled */
     params[2].memref.size = out.len;
 
+    TEE_FreeTransientObject(key);
+    TEE_Free(keyParam.id);
     return res;
 }
 
@@ -519,7 +526,7 @@ static TEE_Result cmd_key_sm2_pke_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARA
 
     res = sm2_enc(key, in.data, in.len, out.data, &out.len);
     if(res != TEE_SUCCESS) {
-        EMSG("cmd_key_sm2_pke_enc fail. res = %x.\n", res);
+        EMSG("sm2_enc fail. res = %x.\n", res);
         TEE_FreeTransientObject(key);
         TEE_Free(keyParam.id);
         return res;
@@ -608,7 +615,7 @@ static TEE_Result cmd_crypto_sm2_dsa_sign(uint32_t pt, TEE_Param params[TEE_NUM_
 
     res = KeyRestore(keyParam.id, keyParam.idLen, &key);
     if(res != TEE_SUCCESS) {
-        EMSG("cmd_crypto_aes_enc() fail. res = %x.\n", res);
+        EMSG("KeyRestore() fail. res = %x.\n", res);
         TEE_Free(keyParam.id);
         return res;
     }
@@ -702,7 +709,6 @@ static TEE_Result cmd_crypto_sm4_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    // IMSG("[bxq] cmd_crypto_sm4_enc 1");
     keyParam.idLen = params[0].memref.size;
     keyParam.id = TEE_Malloc(keyParam.idLen, 0);
     if (!keyParam.id) {
@@ -713,6 +719,8 @@ static TEE_Result cmd_crypto_sm4_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     res = KeyRestore(keyParam.id, keyParam.idLen, &key);
     if(res != TEE_SUCCESS) {
         EMSG("cmd_crypto_sm4_enc() fail. res = %x.\n", res);
+        TEE_Free(keyParam.id);
+        return res;
     }
 
     BUFFER in;
@@ -722,18 +730,19 @@ static TEE_Result cmd_crypto_sm4_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     out.len = params[2].memref.size;
     out.data = params[2].memref.buffer;
 
-    // IMSG("[bxq] cmd_crypto_sm4_enc 2, out.len = %d", out.len);
-
     res = Sm4Encode(key, TEE_ALG_SM4_CTR, in, &out);
     if(res != TEE_SUCCESS) {
         EMSG("cmd_crypto_sm4_enc fail. res = %x.\n", res);
+        TEE_FreeTransientObject(key);
+        TEE_Free(keyParam.id);
+        return res;
     }
-
-    // IMSG("[bxq] cmd_crypto_sm4_enc 3, out.len = %d", out.len);
 
     /* Return the number of byte effectively filled */
 	params[2].memref.size = out.len;
 
+    TEE_FreeTransientObject(key);
+    TEE_Free(keyParam.id);
     return res;
 }
 
@@ -751,7 +760,6 @@ static TEE_Result cmd_crypto_sm4_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    // IMSG("[bxq] cmd_crypto_sm4_dec 1");
     keyParam.idLen = params[0].memref.size;
     keyParam.id = TEE_Malloc(keyParam.idLen, 0);
     if (!keyParam.id) {
@@ -762,6 +770,8 @@ static TEE_Result cmd_crypto_sm4_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     res = KeyRestore(keyParam.id, keyParam.idLen, &key);
     if(res != TEE_SUCCESS) {
         EMSG("cmd_crypto_sm4_dec() fail. res = %x.\n", res);
+        TEE_Free(keyParam.id);
+        return res;
     }
 
     BUFFER in;
@@ -774,38 +784,78 @@ static TEE_Result cmd_crypto_sm4_dec(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     res = Sm4Decode(key, TEE_ALG_SM4_CTR, in, &out);
     if(res != TEE_SUCCESS) {
         EMSG("cmd_crypto_sm4_dec fail. res = %x.\n", res);
+        TEE_FreeTransientObject(key);
+        TEE_Free(keyParam.id);
+        return res;
     }
 
     /* Return the number of byte effectively filled */
     params[2].memref.size = out.len;
+
+    TEE_FreeTransientObject(key);
+    TEE_Free(keyParam.id);
+    return res;
+}
+
+static TEE_Result cmd_crypto_sm3(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                                            TEE_PARAM_TYPE_NONE,
+                                            TEE_PARAM_TYPE_NONE);
+    if (pt != exp_pt) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    res = sm3(params[0].memref.buffer, params[0].memref.size,
+                   params[1].memref.buffer, &params[1].memref.size);
+    return res;
+}
+
+static TEE_Result cmd_crypto_sha(uint32_t pt, TEE_Param params[TEE_NUM_PARAMS])
+{
+    TEE_Result res;
+
+    const uint32_t exp_pt = TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                                            TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                                            TEE_PARAM_TYPE_VALUE_INPUT,
+                                            TEE_PARAM_TYPE_NONE);
+    if (pt != exp_pt) {
+        EMSG("exp_pt fail. res = %x.\n", res);
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    if (params[2].value.a == 256) {
+        res = sha256(params[0].memref.buffer, params[0].memref.size,
+                     params[1].memref.buffer, &params[1].memref.size);
+    } else {
+        EMSG("params[2].value.a fail. res = %x.\n", res);
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
 
     return res;
 }
 
 TEE_Result TA_CreateEntryPoint(void)
 {
-	// IMSG("[bxq] TA_CreateEntryPoint");
 	return TEE_SUCCESS;
 }
 
 void TA_DestroyEntryPoint(void)
 {
-	// IMSG("[bxq] TA_DestroyEntryPoint");
-
 }
 
 TEE_Result TA_OpenSessionEntryPoint(uint32_t __unused param_types,
 				    TEE_Param __unused params[4],
 				    void __unused **session)
 {
-	// IMSG("[bxq] TA_OpenSessionEntryPoint");
-
 	return TEE_SUCCESS;
 }
 
 void TA_CloseSessionEntryPoint(void __unused *session)
 {
-	// IMSG("[bxq] TA_CloseSessionEntryPoint");
 }
 
 TEE_Result TA_InvokeCommandEntryPoint(void __unused *session,
@@ -834,13 +884,10 @@ TEE_Result TA_InvokeCommandEntryPoint(void __unused *session,
     case TA_CMD_CRYPTO_RSA_DEC:
         return cmd_crypto_rsa_dec(param_types, params);
     case TA_CMD_KEY_AES_GEN:
-        // IMSG("Command ID: TA_CMD_KEY_AES_GEN");
         return cmd_key_aes_gen(param_types, params);
     case TA_CMD_CRYPTO_AES_ENC:
-        // IMSG("Command ID: TA_CMD_CRYPTO_AES_ENC");
         return cmd_crypto_aes_enc(param_types, params);
     case TA_CMD_CRYPTO_AES_DEC:
-        // IMSG("Command ID: TA_CMD_CRYPTO_AES_DEC");
         return cmd_crypto_aes_dec(param_types, params);
     case TA_CMD_KEY_SM2_PKE_GEN:
         return cmd_key_sm2_pke_gen(param_types, params);
@@ -855,18 +902,20 @@ TEE_Result TA_InvokeCommandEntryPoint(void __unused *session,
     case TA_CMD_CRYPTO_SM2_DSA_VERIFY:
         return cmd_crypto_sm2_dsa_verify(param_types, params);
     case TA_CMD_KEY_SM4_GEN:
-        // IMSG("Command ID: TA_CMD_KEY_SM4_GEN");
         return cmd_key_sm4_gen(param_types, params);
     case TA_CMD_CRYPTO_SM4_ENC:
-        // IMSG("Command ID: TA_CMD_CRYPTO_SM4_ENC");
         return cmd_crypto_sm4_enc(param_types, params);
      case TA_CMD_CRYPTO_SM4_DEC:
-        // IMSG("Command ID: TA_CMD_CRYPTO_SM4_DEC");
+        IMSG("Command ID: TA_CMD_CRYPTO_SM4_DEC");
         return cmd_crypto_sm4_dec(param_types, params);
     case TA_CMD_CRYPTO_RSA_SIGN:
         return cmd_crypto_rsa_signature(param_types, params);
     case TA_CMD_CRYPTO_RSA_VERIFY:
-        return cmd_crypto_rsa_verify(param_types, params);        
+        return cmd_crypto_rsa_verify(param_types, params);
+    case TA_CMD_CRYPTO_SM3:
+        return cmd_crypto_sm3(param_types, params);
+    case TA_CMD_CRYPTO_SHA:
+        return cmd_crypto_sha(param_types, params);
     default:
         EMSG("Command ID 0x%x is not supported", command);
         return TEE_ERROR_NOT_SUPPORTED;
