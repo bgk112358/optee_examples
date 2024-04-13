@@ -42,15 +42,12 @@ TEE_Result Store_ReadKey(const uint8_t *keyID, size_t keyIDLen,
     TEE_ObjectInfo objectInfo;
     TEE_Result res;
 
-    EMSG("Store_ReadKey. 1");
     res = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE, keyID, keyIDLen,
                                    TEE_DATA_FLAG_ACCESS_READ | TEE_DATA_FLAG_SHARE_READ, &object);
     if (res != TEE_SUCCESS) {
         EMSG("Failed to open persistent object, res=0x%08x", res);
         return res;
     }
-
-    EMSG("Store_ReadKey. 2");
     
     res = TEE_GetObjectInfo1(object, &objectInfo);
     if (res != TEE_SUCCESS) {
@@ -59,7 +56,6 @@ TEE_Result Store_ReadKey(const uint8_t *keyID, size_t keyIDLen,
         return res;
     }
 
-    EMSG("Store_ReadKey. 3, dataSize; = %ld", objectInfo.dataSize);
     size_t dataLen = objectInfo.dataSize;
     uint8_t *data = (uint8_t *)TEE_Malloc(dataLen + 1, 0);
 	if (!data) {
@@ -67,7 +63,6 @@ TEE_Result Store_ReadKey(const uint8_t *keyID, size_t keyIDLen,
         return TEE_ERROR_OUT_OF_MEMORY;
     }
 
-    EMSG("Store_ReadKey. 4");
     res = TEE_SeekObjectData(object, 0, TEE_DATA_SEEK_SET);
     if (res != TEE_SUCCESS) {
 		EMSG("TEE_SeekObjectData failed 0x%08x", res);
@@ -76,7 +71,6 @@ TEE_Result Store_ReadKey(const uint8_t *keyID, size_t keyIDLen,
 		return res;
 	}
 
-    EMSG("Store_ReadKey. 5");
     size_t readBytes;
     res = TEE_ReadObjectData(object, data, dataLen, &readBytes);
 	if (res != TEE_SUCCESS) {
@@ -86,11 +80,9 @@ TEE_Result Store_ReadKey(const uint8_t *keyID, size_t keyIDLen,
 		return res;
 	}
     
-    EMSG("Store_ReadKey. 6, dataLen = %ld, readBytes = %ld", dataLen, readBytes);
     *keyData = data;
     *keyDataLen = readBytes;
 
-    EMSG("Store_ReadKey. 7");
     TEE_CloseObject(object);
     return TEE_SUCCESS;
 }

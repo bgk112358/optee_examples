@@ -701,7 +701,6 @@ static TEE_Result cmd_crypto_sm4_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     if (pt != exp_pt) {
         return TEE_ERROR_BAD_PARAMETERS;
     }
-    EMSG("cmd_crypto_sm4_enc. 1");
 
     keyParam.idLen = params[0].memref.size;
     keyParam.id = TEE_Malloc(keyParam.idLen, 0);
@@ -709,7 +708,6 @@ static TEE_Result cmd_crypto_sm4_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
         return TEE_ERROR_OUT_OF_MEMORY;
     }
     TEE_MemMove(keyParam.id, params[0].memref.buffer, keyParam.idLen);
-    EMSG("cmd_crypto_sm4_enc. 2");
 
     res = KeyRestore(keyParam.id, keyParam.idLen, &key);
     if(res != TEE_SUCCESS) {
@@ -718,8 +716,6 @@ static TEE_Result cmd_crypto_sm4_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
         return res;
     }
 
-    EMSG("cmd_crypto_sm4_enc. 3");
-
     BUFFER in;
     BUFFER out;
     in.len = params[1].memref.size;
@@ -727,7 +723,6 @@ static TEE_Result cmd_crypto_sm4_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     out.len = params[2].memref.size;
     out.data = params[2].memref.buffer;
 
-    EMSG("cmd_crypto_sm4_enc. 4");
     res = Sm4Encode(key, TEE_ALG_SM4_CTR, in, &out);
     if(res != TEE_SUCCESS) {
         EMSG("cmd_crypto_sm4_enc fail. res = %x.\n", res);
@@ -739,7 +734,6 @@ static TEE_Result cmd_crypto_sm4_enc(uint32_t pt, TEE_Param params[TEE_NUM_PARAM
     /* Return the number of byte effectively filled */
 	params[2].memref.size = out.len;
 
-    EMSG("cmd_crypto_sm4_enc. 5");
     TEE_FreeTransientObject(key);
     TEE_Free(keyParam.id);
     return res;

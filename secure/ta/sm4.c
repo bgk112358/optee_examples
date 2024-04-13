@@ -45,8 +45,6 @@ TEE_Result Sm4Encode(TEE_ObjectHandle key, uint32_t algorithm, BUFFER in, BUFFER
     int outsize;
     TEE_ObjectInfo KeyInfo = {0};
 
-    EMSG("%s enter", __func__);
-
     TEE_GetObjectInfo1(key, &KeyInfo);
 
     res = TEE_AllocateOperation(&op, algorithm, TEE_MODE_ENCRYPT, KeyInfo.maxObjectSize);
@@ -77,7 +75,6 @@ TEE_Result Sm4Encode(TEE_ObjectHandle key, uint32_t algorithm, BUFFER in, BUFFER
 
     TEE_FreeOperation(op);
 
-    EMSG("%s exit", __func__);
     return res;
 }
 
@@ -88,8 +85,6 @@ TEE_Result Sm4Decode(TEE_ObjectHandle key, uint32_t algorithm, BUFFER in, BUFFER
     size_t destLen;
     int outsize;
     TEE_ObjectInfo KeyInfo = {0};
-
-    EMSG("%s enter", __func__);
 
     TEE_GetObjectInfo1(key, &KeyInfo);
 
@@ -121,6 +116,5 @@ TEE_Result Sm4Decode(TEE_ObjectHandle key, uint32_t algorithm, BUFFER in, BUFFER
 
     TEE_FreeOperation(op);
 
-    EMSG("%s exit", __func__);
     return res;
 }

@@ -12,8 +12,6 @@ static TEE_Result ecc_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 	TEE_OperationHandle op;
 	TEE_ObjectInfo key_info;
 	uint32_t alg = 0;
-	
-	EMSG("%s enter", __func__);
 
 	if (!key)
 		return TEE_ERROR_BAD_STATE;
@@ -81,8 +79,7 @@ static TEE_Result ecc_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 	}
 
 	TEE_FreeOperation(op);
-	
-	EMSG("%s exit", __func__);
+
 	return res;
 
 }
