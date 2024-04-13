@@ -101,6 +101,8 @@ static TEE_Result rsa_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
         case TEE_MODE_VERIFY:
             alg = TEE_ALG_RSASSA_PKCS1_V1_5_SHA256;
             break;
+        default:
+            break;
     }
 
     res = TEE_AllocateOperation(&op, alg, mode, key_info.objectSize);
@@ -141,6 +143,8 @@ static TEE_Result rsa_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
             if (res != TEE_SUCCESS && res != TEE_ERROR_SIGNATURE_INVALID) {
                 EMSG("TEE_AsymmetricVerifyDigest error! res=0x%x", res);
             }
+            break;
+        default:
             break;
     }
 

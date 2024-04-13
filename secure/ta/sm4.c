@@ -43,7 +43,6 @@ TEE_Result Sm4Encode(TEE_ObjectHandle key, uint32_t algorithm, BUFFER in, BUFFER
     TEE_OperationHandle op;
     size_t destLen;
     int outsize;
-    uint32_t block = 128;
     TEE_ObjectInfo KeyInfo = {0};
 
     EMSG("%s enter", __func__);
@@ -88,7 +87,6 @@ TEE_Result Sm4Decode(TEE_ObjectHandle key, uint32_t algorithm, BUFFER in, BUFFER
     TEE_OperationHandle op;
     size_t destLen;
     int outsize;
-    uint32_t block = 128;
     TEE_ObjectInfo KeyInfo = {0};
 
     EMSG("%s enter", __func__);

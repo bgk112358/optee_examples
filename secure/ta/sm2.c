@@ -34,6 +34,8 @@
 #include <key.h>
 #include <store.h>
 
+#include "sm2.h"
+
 static TEE_Result sm2_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void *inbuf, uint32_t inbuf_len, void *outbuf, size_t *outbuf_len)
 {
 	TEE_Result res;
@@ -60,6 +62,8 @@ static TEE_Result sm2_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 		case TEE_MODE_SIGN:
 		case TEE_MODE_VERIFY:
 			alg = TEE_ALG_SM2_DSA_SM3;
+			break;
+		default:
 			break;
 	}
 
@@ -101,6 +105,8 @@ static TEE_Result sm2_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 			if (res != TEE_SUCCESS && res != TEE_ERROR_SIGNATURE_INVALID) {
                 EMSG("TEE_AsymmetricVerifyDigest error! res=0x%x", res);
             }
+			break;
+		default:
 			break;
 	}
 

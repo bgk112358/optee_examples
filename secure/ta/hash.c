@@ -31,6 +31,8 @@ static TEE_Result sha_arithmetic(uint32_t mode, void *inbuf, uint32_t inbuf_len,
 		case TEE_ALG_SM3:
 			keysize = 256;
 			break;
+		default:
+			break;
 	}
 
 	res = TEE_AllocateOperation(&op, mode, TEE_MODE_DIGEST, 0);

@@ -33,6 +33,7 @@ static TEE_Result ecc_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 		case TEE_MODE_SIGN:
 		case TEE_MODE_VERIFY:
 			alg = TEE_ALG_ECDSA_P256;
+		default:
 			break;
 	}
 
@@ -74,6 +75,8 @@ static TEE_Result ecc_arithmetic(TEE_ObjectHandle key, uint32_t mode, const void
 			if (res) {
 				EMSG("TEE_AsymmetricVerifyDigest error! res=0x%x", res);
 			}
+			break;
+		default:
 			break;
 	}
 

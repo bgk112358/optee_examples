@@ -13,7 +13,7 @@
 
 typedef struct _buffer {
     uint8_t *data;
-    uint32_t len;
+    size_t len;
 } BUFFER;
 
 typedef enum {
@@ -39,7 +39,7 @@ int32_t KeyAesGen(uint8_t *id, uint32_t idLen, uint32_t keyLen, BUFFER iv);
 int32_t KeyRsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen);
 int32_t KeySm2PkeGen(uint8_t *id, uint32_t idLen, uint32_t keyLen);
 int32_t KeySm2DsaGen(uint8_t *id, uint32_t idLen, uint32_t keyLen);
-int32_t KeyBufferGetByID(const uint8_t *id, uint32_t idLen, void *buffer, uint32_t *size);
+int32_t KeyBufferGetByID(uint8_t *id, uint32_t idLen, void *buffer, uint32_t *size);
 
 int32_t StoreWrite(uint8_t *name, uint32_t nameLen, void *buffer, uint32_t len);
 int32_t StoreRead(uint8_t *name, uint32_t nameLen, void **buffer, uint32_t *size);
@@ -59,4 +59,4 @@ int32_t CryptoSm2DsaVerify(uint8_t *id, uint32_t idLen, const BUFFER digestIn, B
 
 int32_t CerCsrCreate(uint8_t *id, uint32_t idLen, void *DN, uint32_t *size);
 
-#endif __SECURE_API_H__
+#endif // __SECURE_API_H__

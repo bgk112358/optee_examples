@@ -6,7 +6,7 @@
 
 typedef struct buffer {
     uint8_t *data;
-    uint32_t len;
+    size_t len;
 } BUFFER;
 
 #endif /* __COMMON_H__ */

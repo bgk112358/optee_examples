@@ -5,13 +5,13 @@
 
 #include "aes.h"
 
-static TEE_Result AesArithmetic(TEE_ObjectHandle aes_key, uint32_t keysize, uint32_t alg, uint32_t mode, void *iv, uint32_t iv_len, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len)
+static TEE_Result AesArithmetic(TEE_ObjectHandle aes_key, uint32_t keysize, uint32_t alg, uint32_t mode, void *iv, size_t iv_len, void *inbuf, size_t inbuf_len, void *outbuf, size_t *outbuf_len)
 {
     TEE_Result res;
     TEE_OperationHandle op;
     size_t destLen;
-    int outsize;
-    uint32_t block = 128;
+    size_t outsize;
+    size_t block = 128;
 
     res = TEE_AllocateOperation(&op, mode, alg, keysize);
     if(res != TEE_SUCCESS) {
@@ -60,7 +60,7 @@ static TEE_Result AesArithmetic(TEE_ObjectHandle aes_key, uint32_t keysize, uint
 static uint8_t iv[16] = {0};
 
 #define AES(alg, mode, length) \
-TEE_Result AES_##alg##_##mode##_##length(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len) \
+TEE_Result AES_##alg##_##mode##_##length(TEE_ObjectHandle aes_key, void *inbuf, size_t inbuf_len, void *outbuf, size_t *outbuf_len) \
 { \
 	return AesArithmetic(aes_key, length, TEE_MODE_##alg, TEE_ALG_AES_##mode##_NOPAD, iv, sizeof(iv), inbuf, inbuf_len, outbuf, outbuf_len); \
 }
@@ -77,19 +77,6 @@ AES(ENCRYPT, CBC, 256)
 AES(DECRYPT, CBC, 128)
 AES(DECRYPT, CBC, 192)
 AES(DECRYPT, CBC, 256)
-
-TEE_Result AES_ENCRYPT_ECB_128(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_ENCRYPT_ECB_192(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_ENCRYPT_ECB_256(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_DECRYPT_ECB_128(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_DECRYPT_ECB_192(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_DECRYPT_ECB_256(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_ENCRYPT_CBC_128(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_ENCRYPT_CBC_192(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_ENCRYPT_CBC_256(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_DECRYPT_CBC_128(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_DECRYPT_CBC_192(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
-TEE_Result AES_DECRYPT_CBC_256(TEE_ObjectHandle aes_key, void *inbuf, uint32_t inbuf_len, void *outbuf, uint32_t *outbuf_len);
 
 TEE_Result AesEncode(TEE_ObjectHandle key, uint32_t mode, BUFFER in, BUFFER *out)
 {
