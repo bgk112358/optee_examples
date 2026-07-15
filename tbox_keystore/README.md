@@ -12,28 +12,27 @@
 
 ```
 tbox_keystore/
-├── Makefile                          # 顶层构建
-├── CMakeLists.txt
-├── Android.mk
+├── Makefile                          # 顶层构建（CA + TA）
+├── CMakeLists.txt                    # CMake 构建（仅 CA）
+├── Android.mk                        # Android 构建（仅 CA）
 ├── README.md
 │
-├── ta/                               # Trusted Application
-│   ├── Makefile
-│   ├── CMakeLists.txt
+├── ta/                               # Trusted Application（仅 Makefile 构建）
+│   ├── Makefile                      #   OP-TEE 3.2 不支持 CMake TA 构建
 │   ├── sub.mk
 │   ├── Android.mk
 │   ├── user_ta_header_defines.h
-│   ├── entry.c                       # TA 入口 + 命令分发
-│   ├── pin_mgr.c                     # 自动 PIN 管理
-│   ├── keystore.c                    # 密钥生命周期（生成/存储/加载/删除）
-│   ├── acl.c                         # 密钥权限检查
-│   ├── crypto_ops.c                  # 加解密/签名/验签封装
+│   ├── entry.c                       #   TA 入口 + 命令分发（11条命令）
+│   ├── pin_mgr.c                     #   自动 PIN 管理
+│   ├── keystore.c                    #   密钥生命周期（生成/存储/加载/删除）
+│   ├── acl.c                         #   密钥权限检查
+│   ├── crypto_ops.c                  #   加解密/签名/验签封装
 │   └── include/
-│       └── tbox_keystore_ta.h        # UUID + 命令ID + 共享结构体
+│       └── tbox_keystore_ta.h        #   UUID + 命令ID + 共享结构体
 │
 ├── host/                             # Client Application
 │   ├── Makefile
-│   └── keystore_client.c             # 命令行工具
+│   └── keystore_client.c             #   命令行工具（11个子命令）
 │
 └── scripts/
     └── provision.sh                   # 产线灌装演示脚本
@@ -41,26 +40,35 @@ tbox_keystore/
 
 ## 构建
 
+### Makefile 构建（CA + TA）
+
 ```bash
 # 设置环境
 source /opt/ql-ol-crosstool/ql-ol-crosstool-env-in
-export TA_DEV_KIT_DIR=<path-to-export-user_ta>
+export TA_DEV_KIT_DIR=/opt/ql-ol-crosstool/sysroots/cortexa7hf-neon-vfpv4-poky-linux-gnueabi/usr/include/optee/export-user_ta
 
-# 构建
+# CA 32位 + TA 32位
 make CROSS_COMPILE=arm-poky-linux-gnueabi-
-```
 
-**TA 用 64 位编译器时：**
-
-```bash
+# CA 32位 + TA 64位（推荐：利用现有 64 位 export-user_ta）
 make HOST_CROSS_COMPILE=arm-poky-linux-gnueabi- \
      TA_CROSS_COMPILE=aarch64-poky-linux-
+```
+
+### CMake 构建（仅 CA）
+
+> OP-TEE 3.2 的 TA dev kit 不支持 CMake，TA 必须用 Makefile 构建。
+
+```bash
+mkdir build && cd build
+cmake .. && make
+# 仅生成 host/tbox_keystore，TA 需单独用 Makefile 编译
 ```
 
 ## 产线灌装流程
 
 ```bash
-# 1. 启动 TA（设备已上电，OP-TEE 已加载 TK#11 TA）
+# 1. 启动 TA（设备已上电，OP-TEE 已加载 TBox Keystore TA）
 
 # 2. 初始化和生成密钥
 ./tbox_keystore --init-pin a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6

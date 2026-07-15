@@ -1,13 +1,12 @@
-cmake_minimum_required(VERSION 3.10)
-project(tbox_keystore C)
+project(optee_example_tbox_keystore C)
 
-set(CMAKE_C_STANDARD 11)
+set (SRC host/keystore_client.c)
 
-# Shared header
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ta/include)
+add_executable (${PROJECT_NAME} ${SRC})
 
-# CA (host)
-add_subdirectory(host)
+target_include_directories(${PROJECT_NAME}
+                           PRIVATE ta/include)
 
-# TA
-add_subdirectory(ta)
+target_link_libraries (${PROJECT_NAME} PRIVATE teec)
+
+install (TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR})
