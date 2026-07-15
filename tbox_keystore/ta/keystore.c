@@ -373,24 +373,33 @@ TEE_Result keystore_gen_rsa(const uint8_t *label, size_t label_len,
 	size_t data_len = 0;
 	TEE_Result res;
 
+	IMSG("gen_rsa: allocating transient obj, bits=%u",
+	     (unsigned int)size_bits);
 	res = TEE_AllocateTransientObject(TEE_TYPE_RSA_KEYPAIR,
 					  size_bits, &key);
 	if (res != TEE_SUCCESS) {
 		EMSG("Allocate RSA failed: 0x%x", (unsigned int)res);
 		return res;
 	}
+	IMSG("gen_rsa: generating key");
 
 	res = TEE_GenerateKey(key, size_bits, NULL, 0);
 	if (res != TEE_SUCCESS) {
 		EMSG("Generate RSA key failed: 0x%x", (unsigned int)res);
 		goto out;
 	}
+	IMSG("gen_rsa: serializing");
 
 	res = serialize_rsa(key, size_bits, perms, &data, &data_len);
-	if (res != TEE_SUCCESS)
+	if (res != TEE_SUCCESS) {
+		EMSG("Serialize RSA failed: 0x%x", (unsigned int)res);
 		goto out;
+	}
+	IMSG("gen_rsa: writing, len=%u", (unsigned int)data_len);
 
 	res = keystore_write(label, label_len, data, data_len, perms);
+	if (res != TEE_SUCCESS)
+		EMSG("Write key failed: 0x%x", (unsigned int)res);
 
 out:
 	if (data) TEE_Free(data);

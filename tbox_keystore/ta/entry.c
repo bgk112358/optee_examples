@@ -413,9 +413,14 @@ TEE_Result TA_InvokeCommandEntryPoint(void *sess_ctx,
 
 	/* Gate 1: PIN check for operations that require it */
 	if (cmd_needs_pin(cmd_id)) {
+		IMSG("Gate1: checking PIN for cmd %u", (unsigned int)cmd_id);
 		res = pin_mgr_verify();
-		if (res != TEE_SUCCESS)
+		if (res != TEE_SUCCESS) {
+			EMSG("Gate1: PIN verify FAILED: 0x%x",
+			     (unsigned int)res);
 			return res;
+		}
+		IMSG("Gate1: PIN verify OK");
 	}
 
 	/* Gate 2: Prevent write operations after lock */
@@ -424,13 +429,20 @@ TEE_Result TA_InvokeCommandEntryPoint(void *sess_ctx,
 		return TEE_ERROR_ACCESS_DENIED;
 	}
 
+	IMSG("Dispatch: cmd=%u", (unsigned int)cmd_id);
 	switch (cmd_id) {
 	case CMD_PIN_INIT:
 		return cmd_pin_init(param_types, params);
 	case CMD_KEY_GEN_RSA:
-		return cmd_key_gen_rsa(param_types, params);
+		IMSG("-> cmd_key_gen_rsa");
+		res = cmd_key_gen_rsa(param_types, params);
+		IMSG("<- cmd_key_gen_rsa: 0x%x", (unsigned int)res);
+		return res;
 	case CMD_KEY_GEN_AES:
-		return cmd_key_gen_aes(param_types, params);
+		IMSG("-> cmd_key_gen_aes");
+		res = cmd_key_gen_aes(param_types, params);
+		IMSG("<- cmd_key_gen_aes: 0x%x", (unsigned int)res);
+		return res;
 	case CMD_KEY_EXPORT_PUB:
 		return cmd_key_export_pub(param_types, params);
 	case CMD_KEY_DELETE:

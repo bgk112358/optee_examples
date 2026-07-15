@@ -122,6 +122,7 @@ TEE_Result pin_mgr_verify(void)
 	}
 
 	/* Open and read stored hash */
+	IMSG("pin_verify: opening PIN object");
 	res = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
 				       &PIN_UUID, sizeof(PIN_UUID),
 				       TEE_DATA_FLAG_ACCESS_READ,
@@ -131,8 +132,11 @@ TEE_Result pin_mgr_verify(void)
 		goto out;
 	}
 
+	IMSG("pin_verify: reading PIN hash");
 	res = TEE_ReadObjectData(obj, stored_hash, sizeof(stored_hash),
 				 &read_bytes);
+	IMSG("pin_verify: read res=0x%x, bytes=%u",
+	     (unsigned int)res, (unsigned int)read_bytes);
 	TEE_CloseObject(obj);
 
 	if (res != TEE_SUCCESS || read_bytes != sizeof(stored_hash)) {
@@ -141,7 +145,7 @@ TEE_Result pin_mgr_verify(void)
 		goto out;
 	}
 
-	/* Hash is valid, means PIN was set */
+	IMSG("pin_verify: OK");
 	res = TEE_SUCCESS;
 out:
 	return res;
