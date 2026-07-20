@@ -32,6 +32,9 @@
 #include <tee_client_api.h>
 #include "tbox_keystore_ta.h"
 
+/* GP TEE / OP-TEE error code for "object already exists" */
+#define TEEC_ERROR_ACCESS_CONFLICT  0xffff0003
+
 /* ---- Hex utility ---- */
 
 static int hex_decode(const char *hex, uint8_t **out, size_t *out_len)
@@ -204,6 +207,8 @@ static void do_gen_rsa(const char *label, uint32_t size_bits,
 	op.params[1].value.b = perms;
 
 	res = invoke_cmd(CMD_KEY_GEN_RSA, &op);
+	if (res == TEEC_ERROR_ACCESS_CONFLICT)
+		errx(1, "Key already exists: '%s'", label);
 	if (res != TEEC_SUCCESS)
 		errx(1, "KEY_GEN_RSA failed: 0x%x", res);
 	printf("RSA-%u key generated: '%s' (perms=0x%x)\n",
@@ -230,6 +235,8 @@ static void do_gen_aes(const char *label, uint32_t size_bits,
 	op.params[1].value.b = perms;
 
 	res = invoke_cmd(CMD_KEY_GEN_AES, &op);
+	if (res == TEEC_ERROR_ACCESS_CONFLICT)
+		errx(1, "Key already exists: '%s'", label);
 	if (res != TEEC_SUCCESS)
 		errx(1, "KEY_GEN_AES failed: 0x%x", res);
 	printf("AES-%u key generated: '%s' (perms=0x%x)\n",

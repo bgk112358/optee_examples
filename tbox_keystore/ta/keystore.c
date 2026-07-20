@@ -218,8 +218,8 @@ static TEE_Result keystore_write(const uint8_t *label, size_t label_len,
 					  flags, TEE_HANDLE_NULL,
 					  data, data_len, &obj);
 	if (res != TEE_SUCCESS) {
-		EMSG("Failed to create persistent key: 0x%x",
-		     (unsigned int)res);
+		EMSG("Failed to create persistent key '%.*s': 0x%x",
+		     (int)label_len, label, (unsigned int)res);
 		return res;
 	}
 
@@ -364,6 +364,7 @@ static TEE_Result restore_aes(uint8_t *data, size_t data_len,
 
 /*
  * Generate an RSA key pair and store persistently.
+ * Returns TEE_ERROR_ACCESS_CONFLICT if a key with the same label exists.
  */
 TEE_Result keystore_gen_rsa(const uint8_t *label, size_t label_len,
 			    uint32_t size_bits, uint32_t perms)
@@ -372,6 +373,16 @@ TEE_Result keystore_gen_rsa(const uint8_t *label, size_t label_len,
 	uint8_t *data = NULL;
 	size_t data_len = 0;
 	TEE_Result res;
+
+	/* Forbid overwrite: check if label is already in use */
+	res = keystore_read(label, label_len, &data, &data_len);
+	if (res == TEE_SUCCESS) {
+		EMSG("Key already exists, overwrite forbidden: '%.*s'",
+		     (int)label_len, label);
+		TEE_Free(data);
+		return TEE_ERROR_ACCESS_CONFLICT;
+	}
+	/* TEE_ERROR_ITEM_NOT_FOUND is expected — label is free to use */
 
 	res = TEE_AllocateTransientObject(TEE_TYPE_RSA_KEYPAIR,
 					  size_bits, &key);
@@ -400,6 +411,7 @@ out:
 
 /*
  * Generate an AES key and store persistently.
+ * Returns TEE_ERROR_ACCESS_CONFLICT if a key with the same label exists.
  */
 TEE_Result keystore_gen_aes(const uint8_t *label, size_t label_len,
 			    uint32_t size_bits, uint32_t perms)
@@ -408,6 +420,15 @@ TEE_Result keystore_gen_aes(const uint8_t *label, size_t label_len,
 	uint8_t *data = NULL;
 	size_t data_len = 0;
 	TEE_Result res;
+
+	/* Forbid overwrite: check if label is already in use */
+	res = keystore_read(label, label_len, &data, &data_len);
+	if (res == TEE_SUCCESS) {
+		EMSG("Key already exists, overwrite forbidden: '%.*s'",
+		     (int)label_len, label);
+		TEE_Free(data);
+		return TEE_ERROR_ACCESS_CONFLICT;
+	}
 
 	res = TEE_AllocateTransientObject(TEE_TYPE_AES, size_bits, &key);
 	if (res != TEE_SUCCESS) {
