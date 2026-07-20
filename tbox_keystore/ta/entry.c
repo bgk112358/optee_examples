@@ -18,6 +18,7 @@ TEE_Result pin_mgr_verify(void);
 void       pin_mgr_lock(void);
 int        pin_mgr_is_locked(void);
 int        pin_mgr_is_set(void);
+void       pin_mgr_restore(void);
 
 TEE_Result keystore_gen_rsa(const uint8_t *label, size_t label_len,
 			    uint32_t size_bits, uint32_t perms);
@@ -394,6 +395,12 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
 	(void)param_types;
 	(void)params;
 	(void)sess_ctx;
+
+	/* Restore PIN/lock state from persistent storage.
+	 * g_pin_state is lost on TA restart, so check the secure
+	 * storage objects to see if PIN was already provisioned. */
+	pin_mgr_restore();
+
 	return TEE_SUCCESS;
 }
 

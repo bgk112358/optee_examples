@@ -20,6 +20,12 @@ static const TEE_UUID PIN_UUID = {
 	{ 0x00, 0x00, 0x7f, 0x32, 0x8b, 0x11, 0xc0, 0x00 }
 };
 
+/* Fixed object ID for lock flag — persists across TA restarts */
+static const TEE_UUID LOCK_UUID = {
+	0xf8e9209a, 0x3c7d, 0x4d6b,
+	{ 0x00, 0x00, 0x7f, 0x32, 0x8b, 0x11, 0xc0, 0x01 }
+};
+
 /* Pin states */
 enum pin_state {
 	PIN_UNSET   = 0,  /* Not yet provisioned */
@@ -150,11 +156,64 @@ out:
 /*
  * Lock the TA after provisioning.
  * Disables PIN_INIT and key generation/delete commands.
+ * Persists lock flag so state survives TA restarts.
  */
 void pin_mgr_lock(void)
 {
+	TEE_ObjectHandle obj = TEE_HANDLE_NULL;
+	TEE_Result res;
+	uint8_t flag = 1;
+
+	res = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE,
+					  &LOCK_UUID, sizeof(LOCK_UUID),
+					  TEE_DATA_FLAG_ACCESS_READ |
+					  TEE_DATA_FLAG_ACCESS_WRITE |
+					  TEE_DATA_FLAG_ACCESS_WRITE_META,
+					  TEE_HANDLE_NULL,
+					  &flag, sizeof(flag), &obj);
+	if (res == TEE_SUCCESS)
+		TEE_CloseObject(obj);
+
 	g_pin_state = PIN_LOCKED;
 	DMSG("TA locked");
+}
+
+/*
+ * Restore PIN/lock state from persistent storage.
+ * Must be called at session open — g_pin_state is lost on TA restart.
+ */
+void pin_mgr_restore(void)
+{
+	TEE_ObjectHandle obj = TEE_HANDLE_NULL;
+	TEE_Result res;
+
+	/* Check if lock flag exists */
+	res = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+				       &LOCK_UUID, sizeof(LOCK_UUID),
+				       TEE_DATA_FLAG_ACCESS_READ,
+				       &obj);
+	if (res == TEE_SUCCESS) {
+		TEE_CloseObject(obj);
+		g_pin_state = PIN_LOCKED;
+		DMSG("PIN state restored: LOCKED");
+		return;
+	}
+
+	/* Check if PIN was provisioned */
+	res = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+				       &PIN_UUID, sizeof(PIN_UUID),
+				       TEE_DATA_FLAG_ACCESS_READ,
+				       &obj);
+	if (res == TEE_SUCCESS) {
+		TEE_CloseObject(obj);
+		g_pin_state = PIN_SET;
+		DMSG("PIN state restored: SET");
+		return;
+	}
+
+	/* PIN never set */
+	g_pin_state = PIN_UNSET;
+	DMSG("PIN state restored: UNSET");
 }
 
 /*

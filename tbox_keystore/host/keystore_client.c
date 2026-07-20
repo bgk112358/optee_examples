@@ -528,7 +528,7 @@ int main(int argc, char **argv)
 	const char *out_file = NULL;
 	uint32_t size_bits = 0;
 	int can_sign = 0;
-	int can_verify = 0;
+	// int can_verify = 0;
 	int can_encrypt = 0;
 	int can_decrypt = 0;
 	int i;
@@ -566,7 +566,7 @@ int main(int argc, char **argv)
 		} else if (strcmp(argv[i], "--sign") == 0) {
 			can_sign = 1;
 		} else if (strcmp(argv[i], "--verify") == 0) {
-			can_verify = 1;
+			// can_verify = 1;
 		} else if (strcmp(argv[i], "--encrypt") == 0) {
 			can_encrypt = 1;
 		} else if (strcmp(argv[i], "--decrypt") == 0) {
