@@ -40,11 +40,20 @@ target_link_libraries(tls_mutual_auth
 )
 
 # ============================================================
+#  Target 3 — engine_test  (ENGINE smoke-test)
+# ============================================================
+add_executable(engine_test test/engine_test.c)
+target_link_libraries(engine_test
+    ${OPENSSL_LIBRARIES}
+    e_tbox_keystore
+)
+
+# ============================================================
 #  Install
 # ============================================================
 install(TARGETS e_tbox_keystore
     LIBRARY DESTINATION /usr/lib/engines-1.1/
 )
-install(TARGETS tls_mutual_auth
+install(TARGETS tls_mutual_auth engine_test
     RUNTIME DESTINATION /usr/bin/
 )

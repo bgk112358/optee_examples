@@ -54,6 +54,70 @@ static const uint32_t g_rsa_attr_ids[] = {
 	TEE_ATTR_RSA_COEFFICIENT,
 };
 
+/* ---- Per-session read cache (avoids REE FS close→reopen bug) ---- */
+
+#define CACHE_SLOTS 4
+
+struct cache_entry {
+	TEE_UUID uuid;
+	uint8_t *data;
+	size_t   data_len;
+};
+
+static struct cache_entry g_cache[CACHE_SLOTS];
+static int g_cache_init;
+
+static void cache_clear(void)
+{
+	int i;
+	for (i = 0; i < CACHE_SLOTS; i++) {
+		if (g_cache[i].data) {
+			TEE_Free(g_cache[i].data);
+			g_cache[i].data = NULL;
+		}
+	}
+	g_cache_init = 1;
+}
+
+static struct cache_entry *cache_lookup(const TEE_UUID *uuid)
+{
+	int i;
+	if (!g_cache_init)
+		return NULL;
+	for (i = 0; i < CACHE_SLOTS; i++) {
+		if (g_cache[i].data &&
+		    !TEE_MemCompare(&g_cache[i].uuid, uuid, sizeof(TEE_UUID)))
+			return &g_cache[i];
+	}
+	return NULL;
+}
+
+static void cache_store(const TEE_UUID *uuid, uint8_t *data, size_t len)
+{
+	int i;
+	if (!g_cache_init)
+		cache_clear();
+	if (g_cache[0].data)
+		TEE_Free(g_cache[0].data);
+	for (i = 0; i < CACHE_SLOTS - 1; i++)
+		g_cache[i] = g_cache[i + 1];
+	g_cache[CACHE_SLOTS - 1].uuid     = *uuid;
+	g_cache[CACHE_SLOTS - 1].data     = data;
+	g_cache[CACHE_SLOTS - 1].data_len = len;
+}
+
+static void cache_invalidate(const TEE_UUID *uuid)
+{
+	int i;
+	for (i = 0; i < CACHE_SLOTS; i++) {
+		if (g_cache[i].data &&
+		    !TEE_MemCompare(&g_cache[i].uuid, uuid, sizeof(TEE_UUID))) {
+			TEE_Free(g_cache[i].data);
+			g_cache[i].data = NULL;
+		}
+	}
+}
+
 /* ---- UUID derivation from label (deterministic) ---- */
 
 static void label_to_uuid(const uint8_t *label, size_t label_len,
@@ -237,10 +301,26 @@ static TEE_Result keystore_read(const uint8_t *label, size_t label_len,
 	TEE_ObjectHandle obj = TEE_HANDLE_NULL;
 	TEE_Result res;
 	uint32_t read_bytes;
+	struct cache_entry *ce;
 
 	label_to_uuid(label, label_len, &uuid);
 
-	/* Try to open then fallback with meta permission if read-only file */
+	/*
+	 * Session cache: the ENGINE (or any REE caller) may load the
+	 * same key several times in one session.  REE FS on OP-TEE 3.2
+	 * can spuriously refuse TEE_OpenPersistentObject on the second
+	 * open.  Serving from cache avoids the close→reopen cycle.
+	 */
+	ce = cache_lookup(&uuid);
+	if (ce) {
+		*data = TEE_Malloc(ce->data_len, TEE_MALLOC_FILL_ZERO);
+		if (!*data)
+			return TEE_ERROR_OUT_OF_MEMORY;
+		TEE_MemMove(*data, ce->data, ce->data_len);
+		*data_len = ce->data_len;
+		return TEE_SUCCESS;
+	}
+
 	res = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
 				       &uuid, sizeof(uuid),
 				       TEE_DATA_FLAG_ACCESS_READ,
@@ -253,11 +333,11 @@ static TEE_Result keystore_read(const uint8_t *label, size_t label_len,
 					       &obj);
 	}
 	if (res != TEE_SUCCESS) {
-		EMSG("Key not found: '%.*s'", (int)label_len, label);
+		EMSG("Key not found: '%.*s' (TEE_OpenPersistentObject: 0x%x)",
+		     (int)label_len, label, (unsigned int)res);
 		return TEE_ERROR_ITEM_NOT_FOUND;
 	}
 
-	/* Get object size */
 	res = TEE_SeekObjectData(obj, 0, TEE_DATA_SEEK_END);
 	if (res != TEE_SUCCESS) {
 		TEE_CloseObject(obj);
@@ -265,7 +345,7 @@ static TEE_Result keystore_read(const uint8_t *label, size_t label_len,
 	}
 
 	*data_len = 0;
-	*data = TEE_Malloc(16384, TEE_MALLOC_FILL_ZERO);  /* max key size */
+	*data = TEE_Malloc(16384, TEE_MALLOC_FILL_ZERO);
 	if (!*data) {
 		TEE_CloseObject(obj);
 		return TEE_ERROR_OUT_OF_MEMORY;
@@ -276,8 +356,17 @@ static TEE_Result keystore_read(const uint8_t *label, size_t label_len,
 	*data_len = read_bytes;
 
 	TEE_CloseObject(obj);
-	return (res == TEE_SUCCESS || res == TEE_ERROR_SHORT_BUFFER)
-		? TEE_SUCCESS : res;
+
+	if (res == TEE_SUCCESS || res == TEE_ERROR_SHORT_BUFFER) {
+		/* Keep a copy in the session cache */
+		uint8_t *copy = TEE_Malloc(read_bytes, TEE_MALLOC_FILL_ZERO);
+		if (copy) {
+			TEE_MemMove(copy, *data, read_bytes);
+			cache_store(&uuid, copy, read_bytes);
+		}
+		return TEE_SUCCESS;
+	}
+	return res;
 }
 
 /* ---- Delete key from persistent storage ---- */

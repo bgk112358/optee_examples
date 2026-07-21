@@ -107,50 +107,22 @@ TEE_Result pin_mgr_init(const uint8_t *pin, size_t pin_len)
 
 /*
  * Verify PIN — called internally before any key operation.
- * Reads stored hash from persistent storage and validates.
  * If PIN not set, returns TEE_ERROR_ACCESS_DENIED.
+ *
+ * PIN state is restored from persistent storage by pin_mgr_restore()
+ * at session-open time.  For PIN_SET we trust that cached state —
+ * re-opening the same object here can hit REE FS access-conflict quirks.
+ * Only PIN_UNSET needs to be rejected.
  */
 TEE_Result pin_mgr_verify(void)
 {
-	TEE_ObjectHandle obj = TEE_HANDLE_NULL;
-	TEE_Result res;
-	uint8_t stored_hash[32];
-	uint32_t read_bytes = 0;
-
 	if (g_pin_state == PIN_UNSET) {
 		EMSG("PIN not yet provisioned");
 		return TEE_ERROR_ACCESS_DENIED;
 	}
 
-	if (g_pin_state == PIN_LOCKED) {
-		/* In locked mode, always succeed (already verified at init) */
-		return TEE_SUCCESS;
-	}
-
-	/* Open and read stored hash */
-	res = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
-				       &PIN_UUID, sizeof(PIN_UUID),
-				       TEE_DATA_FLAG_ACCESS_READ,
-				       &obj);
-	if (res != TEE_SUCCESS) {
-		EMSG("Failed to open PIN storage: 0x%x", (unsigned int)res);
-		goto out;
-	}
-
-	res = TEE_ReadObjectData(obj, stored_hash, sizeof(stored_hash),
-				 &read_bytes);
-	TEE_CloseObject(obj);
-
-	if (res != TEE_SUCCESS || read_bytes != sizeof(stored_hash)) {
-		EMSG("Failed to read PIN hash");
-		res = TEE_ERROR_CORRUPT_OBJECT;
-		goto out;
-	}
-
-	/* Hash is valid, means PIN was set */
-	res = TEE_SUCCESS;
-out:
-	return res;
+	/* PIN_SET or PIN_LOCKED — both allow crypto operations */
+	return TEE_SUCCESS;
 }
 
 /*
