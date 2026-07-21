@@ -173,6 +173,9 @@ static SSL_CTX *create_tls_ctx(int server_mode,
 
 	SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
 	SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
+	/* ECDHE-only: avoid RSA key-exchange which needs rsa_priv_dec (Phase 2). */
+	SSL_CTX_set_cipher_list(ctx,
+		"ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256");
 	return ctx;
 
 err:

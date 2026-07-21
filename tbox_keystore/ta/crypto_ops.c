@@ -138,3 +138,30 @@ out:
 	TEE_FreeOperation(op);
 	return res;
 }
+
+/* ---- RSA PKCS#1 v1.5 decrypt ---- */
+
+TEE_Result crypto_rsa_decrypt(TEE_ObjectHandle key, uint32_t key_size_bits,
+			      const uint8_t *cipher, size_t cipher_len,
+			      uint8_t *plain, size_t *plain_len)
+{
+	TEE_OperationHandle op = TEE_HANDLE_NULL;
+	TEE_Result res;
+
+	res = TEE_AllocateOperation(&op, TEE_ALG_RSA_NOPAD,
+				    TEE_MODE_DECRYPT, key_size_bits);
+	if (res != TEE_SUCCESS) {
+		EMSG("Allocate RSA decrypt op failed: 0x%x", (unsigned int)res);
+		return res;
+	}
+
+	res = TEE_SetOperationKey(op, key);
+	if (res != TEE_SUCCESS)
+		goto out;
+
+	res = TEE_AsymmetricDecrypt(op, NULL, 0, cipher, cipher_len,
+				    plain, plain_len);
+out:
+	TEE_FreeOperation(op);
+	return res;
+}

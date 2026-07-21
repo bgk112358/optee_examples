@@ -47,6 +47,9 @@ TEE_Result crypto_aes_encrypt(TEE_ObjectHandle key, uint32_t key_size_bits,
 TEE_Result crypto_aes_decrypt(TEE_ObjectHandle key, uint32_t key_size_bits,
 			      const uint8_t *cipher, size_t cipher_len,
 			      uint8_t *plain, size_t *plain_len);
+TEE_Result crypto_rsa_decrypt(TEE_ObjectHandle key, uint32_t key_size_bits,
+			      const uint8_t *cipher, size_t cipher_len,
+			      uint8_t *plain, size_t *plain_len);
 
 /* ---- Command handlers ---- */
 
@@ -328,6 +331,44 @@ static TEE_Result cmd_get_info(uint32_t pt,
 	return res;
 }
 
+
+static TEE_Result cmd_rsa_decrypt(uint32_t pt,
+				  TEE_Param params[TEE_NUM_PARAMS])
+{
+	const uint32_t exp_pt = TEE_PARAM_TYPES(
+		TEE_PARAM_TYPE_MEMREF_INPUT,
+		TEE_PARAM_TYPE_MEMREF_INPUT,
+		TEE_PARAM_TYPE_MEMREF_OUTPUT,
+		TEE_PARAM_TYPE_NONE);
+
+	TEE_ObjectHandle key = TEE_HANDLE_NULL;
+	uint32_t type, perms;
+	TEE_Result res;
+
+	if (pt != exp_pt)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	res = keystore_load(params[0].memref.buffer,
+			    params[0].memref.size, &type, &perms, &key);
+	if (res != TEE_SUCCESS)
+		return res;
+
+	if (type != KEY_TYPE_RSA_KEYPAIR) {
+		EMSG("Decrypt only supported for RSA keypairs");
+		res = TEE_ERROR_NOT_SUPPORTED;
+		goto out;
+	}
+
+	res = crypto_rsa_decrypt(key, 2048,
+				 params[1].memref.buffer,
+				 params[1].memref.size,
+				 params[2].memref.buffer,
+				 &params[2].memref.size);
+out:
+	if (key != TEE_HANDLE_NULL)
+		TEE_FreeTransientObject(key);
+	return res;
+}
 static TEE_Result cmd_provision_lock(uint32_t pt,
 				     TEE_Param params[TEE_NUM_PARAMS])
 {
@@ -449,6 +490,8 @@ TEE_Result TA_InvokeCommandEntryPoint(void *sess_ctx,
 	case CMD_ENCRYPT_AES:
 		return cmd_encrypt_aes(param_types, params);
 	case CMD_DECRYPT_AES:
+		case CMD_RSA_DECRYPT:
+			return cmd_rsa_decrypt(param_types, params);
 		return cmd_decrypt_aes(param_types, params);
 	case CMD_GET_INFO:
 		return cmd_get_info(param_types, params);

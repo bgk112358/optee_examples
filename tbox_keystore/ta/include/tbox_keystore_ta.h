@@ -93,6 +93,14 @@
  */
 #define CMD_PROVISION_LOCK	10
 
+/*
+ * CMD_RSA_DECRYPT - RSA PKCS#1 v1.5 decrypt (private-key operation)
+ * param[0] (memref) key label string
+ * param[1] (memref) ciphertext
+ * param[2] (memref) output: plaintext
+ */
+#define CMD_RSA_DECRYPT		11
+
 /* ---- Key type identifiers ---- */
 #define KEY_TYPE_RSA_KEYPAIR	1
 #define KEY_TYPE_AES		2
