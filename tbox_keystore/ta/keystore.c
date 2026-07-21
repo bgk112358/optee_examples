@@ -550,13 +550,19 @@ TEE_Result keystore_export_pub(const uint8_t *label, size_t label_len,
 			goto out_export;
 		}
 
-		total = n_len + e_len;
+	/* Format: [n_len:4][e_len:4][modulus][exponent].
+		 * Caller (ENGINE / CA) can parse without knowing key size. */
+		total = 8 + n_len + e_len;
 		if (*out_len < total) {
 			*out_len = total;
 			res = TEE_ERROR_SHORT_BUFFER;
 		} else {
-			memcpy(out, n_data, n_len);
-			memcpy(out + n_len, e_data, e_len);
+			uint32_t header[2];
+			header[0] = (uint32_t)n_len;
+			header[1] = (uint32_t)e_len;
+			memcpy(out, header, 8);
+			memcpy(out + 8, n_data, n_len);
+			memcpy(out + 8 + n_len, e_data, e_len);
 			*out_len = total;
 			res = TEE_SUCCESS;
 		}
