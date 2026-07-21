@@ -49,11 +49,20 @@ target_link_libraries(engine_test
 )
 
 # ============================================================
+#  Target 4 — https_client  (HTTPS client via ENGINE)
+# ============================================================
+add_executable(https_client test/https_client.c)
+target_link_libraries(https_client
+    ${OPENSSL_LIBRARIES}
+    e_tbox_keystore
+)
+
+# ============================================================
 #  Install
 # ============================================================
 install(TARGETS e_tbox_keystore
     LIBRARY DESTINATION /usr/lib/engines-1.1/
 )
-install(TARGETS tls_mutual_auth engine_test
+install(TARGETS tls_mutual_auth engine_test https_client
     RUNTIME DESTINATION /usr/bin/
 )
