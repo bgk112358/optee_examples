@@ -1,10 +1,8 @@
 #!/bin/sh
-# ============================================================
-#  TLS Mutual Auth — 测试前置: 生成 TEE 业务密钥
-# ============================================================
 set -e
 
-TBOX="./tbox_keystore"
+TBOX="optee_example_tbox_keystore"
+TLS="tls_mutual_auth"
 
 echo "=== Step 1: Init PIN ==="
 $TBOX --init-pin 31323334
@@ -20,9 +18,13 @@ $TBOX --info server-key
 $TBOX --info client-key
 
 echo ""
-echo "=== Step 4: Lock TA ==="
+echo "=== Step 4: Generate TLS certs (one process, both keys) ==="
+$TLS --gen-certs
+
+echo ""
+echo "=== Step 5: Lock TA ==="
 $TBOX --lock
 
 echo ""
-echo "=== Done. TA is provisioned and locked. ==="
+echo "=== Done. ==="
 echo "    Now run:  ./test/run_test.sh"
