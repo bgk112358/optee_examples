@@ -1,0 +1,65 @@
+/*
+ * Minimal patch for paho.mqtt.c 1.3.16 — SSLSocket external config callback.
+ *
+ * Apply to: three_part/mqtt/paho.mqtt.c-1.3.16/src/
+ *
+ * This adds the same mechanism used in the BYD T-Box HSM SDK:
+ *  1. SSLSocket_setExternalConfigCallback(cb) — register a callback
+ *  2. When MQTTClient_SSLOptions.privateKey == "__EXTERNAL_CONFIG__",
+ *     paho calls cb(SSL_CTX*) instead of SSL_CTX_use_PrivateKey_file().
+ *
+ * Files to modify:
+ *   src/SSLSocket.c  — add global callback + call it
+ *   src/SSLSocket.h  — declare the callback type + setter
+ */
+
+/* ===== src/SSLSocket.h patch ===== */
+/* After the existing #include block, add: */
+
+/*
+ * Callback type for external SSL configuration (e.g. HSM / TEE engine).
+ * When set, and when SSLOptions.privateKey == "__EXTERNAL_CONFIG__",
+ * this callback is invoked right after SSL_CTX_new(), before the TLS
+ * handshake.  The callback should use SSL_CTX_use_PrivateKey(),
+ * SSL_CTX_use_certificate(), SSL_CTX_load_verify_locations() etc.
+ * to inject credentials.
+ *
+ * Return 0 on success, non-zero on failure (paho will abort the connect).
+ */
+typedef int (*SSLSocket_externalConfigCallback)(SSL_CTX* ctx);
+void SSLSocket_setExternalConfigCallback(SSLSocket_externalConfigCallback cb);
+
+/* ===== src/SSLSocket.c patch ===== */
+/* 1. Add after the #include block: */
+
+/*
+static SSLSocket_externalConfigCallback g_ssl_ext_cb = NULL;
+
+void SSLSocket_setExternalConfigCallback(SSLSocket_externalConfigCallback cb)
+{
+	g_ssl_ext_cb = cb;
+}
+*/
+
+/* 2. In SSLSocket_addPendingRead (or equivalent SSL context setup function),
+ *    find the call to SSL_CTX_use_PrivateKey_file() and wrap it:
+ */
+
+/*
+	// --- PATCH BEGIN ---
+	if (g_ssl_ext_cb && opt->privateKey &&
+	    strcmp(opt->privateKey, "__EXTERNAL_CONFIG__") == 0) {
+		if (g_ssl_ext_cb(ssl_ctx) != 0) {
+			Log(LOG_ERROR, "External SSL config callback failed");
+			goto failed;
+		}
+	} else
+	// --- PATCH END ---
+	{
+		// original code:
+		if (SSL_CTX_use_PrivateKey_file(ssl_ctx,
+		    opt->privateKey, SSL_FILETYPE_PEM) != 1) {
+			...
+		}
+	}
+*/
