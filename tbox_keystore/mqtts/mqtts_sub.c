@@ -91,6 +91,8 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "[SUB] ssl_opts.privateKey='%s' struct_version=%d\n",
 		ssl_opts.privateKey, ssl_opts.struct_version);
 
+	MQTTClient_setTraceLevel(MQTTCLIENT_TRACE_ERROR);
+
 	rc = MQTTClient_connect(client, &conn_opts);
 	if (rc != MQTTCLIENT_SUCCESS) {
 		fprintf(stderr, "MQTTClient_connect: rc=%d (%s)\n",

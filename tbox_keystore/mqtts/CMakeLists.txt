@@ -47,6 +47,10 @@ target_link_libraries(mqtts_sub
     paho-mqtt3cs
 )
 
+# ---- tcpprobe_mqtt — paho TCP smoke test (no SSL, no ENGINE) ----
+add_executable(tcpprobe_mqtt tcpprobe_mqtt.c)
+target_link_libraries(tcpprobe_mqtt paho-mqtt3c)
+
 # ---- gen_csr — CSR generator (ENGINE-signed) ----
 add_executable(gen_csr gen_csr.c)
 target_link_libraries(gen_csr

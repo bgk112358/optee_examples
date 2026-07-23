@@ -39,6 +39,16 @@ echo " Trust : root-ca.crt"
 echo "========================================="
 echo ""
 
+# Pre-flight: check TCP port reachable
+echo "[TEST] Checking TCP port $BROKER:$PORT ..."
+if echo "" | telnet "$BROKER" "$PORT" 2>/dev/null | head -1 | grep -q "Connected"; then
+    echo "       TCP OK"
+else
+    echo "       TCP FAIL — broker not reachable"
+    exit 1
+fi
+echo ""
+
 # Start sub in background
 echo "[TEST] Starting subscriber (TEE key: sub-key)..."
 $SUB "$BROKER" "$PORT" "$TOPIC" 30 &

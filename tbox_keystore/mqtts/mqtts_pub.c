@@ -16,6 +16,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <MQTTClient.h>
 #include <paho/SSLSocketConfig.h> /* SSLSocket_setExternalConfigCallback */
@@ -58,6 +62,9 @@ int main(int argc, char *argv[])
 	fprintf(stdout, "Broker: %s\n", uri);
 	fprintf(stdout, "Topic:  %s\n", topic);
 
+	/* Enable paho trace (must be BEFORE MQTTClient_create) */
+	MQTTClient_setTraceLevel(MQTTCLIENT_TRACE_MAXIMUM);
+
 	/* ---- 1. Register external SSL callback (like InitHsm + callback) ---- */
 	SSLSocket_setExternalConfigCallback(tbox_ssl_config_pub);
 
@@ -85,6 +92,24 @@ int main(int argc, char *argv[])
 		uri, conn_opts.connectTimeout);
 	fprintf(stderr, "[PUB] ssl_opts.privateKey='%s' struct_version=%d\n",
 		ssl_opts.privateKey, ssl_opts.struct_version);
+
+	/* Enable paho trace (must be before MQTTClient_create) */
+	MQTTClient_setTraceLevel(MQTTCLIENT_TRACE_MAXIMUM);
+
+	/* Pre-flight: raw TCP check */
+	{
+		int fd = socket(AF_INET, SOCK_STREAM, 0);
+		struct sockaddr_in sa;
+		sa.sin_family = AF_INET;
+		sa.sin_port = htons(port);
+		inet_pton(AF_INET, host, &sa.sin_addr);
+		if (connect(fd, (struct sockaddr *)&sa, sizeof(sa)) == 0) {
+			fprintf(stderr, "[PUB] TCP connect OK\n");
+			close(fd);
+		} else {
+			fprintf(stderr, "[PUB] TCP connect FAIL: %s\n", strerror(errno));
+		}
+	}
 
 	rc = MQTTClient_connect(client, &conn_opts);
 	if (rc != MQTTCLIENT_SUCCESS) {
