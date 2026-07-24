@@ -10,8 +10,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(dirname "$SCRIPT_DIR")"
-PUB="$SRC_DIR/mqtts_pub"
-SUB="$SRC_DIR/mqtts_sub"
+PUB="$SRC_DIR/build/mqtts_pub"
+SUB="$SRC_DIR/build/mqtts_sub"
 BROKER="192.168.100.48"
 PORT=8883
 TOPIC="tbox/test"

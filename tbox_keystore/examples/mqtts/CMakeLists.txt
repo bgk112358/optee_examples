@@ -11,7 +11,7 @@ set(PAHO_DIR "/home/test0923/workspace/three_part/mqtt/out"
     CACHE PATH "paho.mqtt.c install prefix")
 
 # ---- tbox_keystore ENGINE (built from ../engine) ----
-set(ENGINE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../engine/build"
+set(ENGINE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../engine/build"
     CACHE PATH "e_tbox_keystore build directory")
 
 include_directories(

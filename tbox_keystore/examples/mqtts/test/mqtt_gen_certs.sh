@@ -20,7 +20,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(dirname "$SCRIPT_DIR")"
-GEN_CSR="$SRC_DIR/gen_csr"
+GEN_CSR="$SRC_DIR/build/gen_csr"
 TBOX="optee_example_tbox_keystore"
 
 CA_KEY=/tmp/root-ca.key

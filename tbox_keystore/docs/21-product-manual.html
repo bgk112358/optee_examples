@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>TBox 安全服务产品说明书 v1.0</title>
+<style>
+  @page { size: A4; margin: 22mm 18mm 22mm 18mm; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page-break { page-break-before: always; }
+    h2 { page-break-after: avoid; }
+    .mermaid svg { max-width: 100%; height: auto; }
+  }
+  @media screen {
+    body { max-width: 170mm; margin: 0 auto; padding: 20px 0; }
+  }
+  body {
+    font-family: "Noto Sans SC", "Source Han Sans CN", "SimSun", "Microsoft YaHei", sans-serif;
+    font-size: 11pt; line-height: 1.65; color: #1a1a1a;
+    counter-reset: h2-counter;
+  }
+
+  /* cover */
+  .cover { text-align: center; padding: 60px 0 30px 0; }
+  .cover h1 { font-size: 24pt; font-weight: 700; margin-bottom: 8px; letter-spacing: 2px; }
+  .cover .sub { font-size: 12pt; color: #555; margin-bottom: 30px; }
+  .cover .meta { font-size: 10pt; color: #777; }
+  .cover .meta p { margin: 2px 0; }
+  .cover .divider { width: 60%; height: 1px; background: #1a1a1a; margin: 20px auto; }
+
+  /* headings */
+  h2 { font-size: 15pt; font-weight: 700; margin: 28px 0 12px 0; padding-bottom: 4px; border-bottom: 1.5px solid #1a1a1a; }
+  h3 { font-size: 12.5pt; font-weight: 600; margin: 20px 0 8px 0; }
+  h4 { font-size: 11.5pt; font-weight: 600; margin: 14px 0 6px 0; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; font-size: 10pt; }
+  th { background: #1a1a1a; color: #fff; padding: 6px 8px; text-align: left; font-weight: 600; }
+  td { border-bottom: 1px solid #ccc; padding: 5px 8px; }
+  tr:nth-child(even) td { background: #f7f7f7; }
+
+  /* code */
+  code { font-family: "JetBrains Mono", "Consolas", "Courier New", monospace; font-size: 9pt; background: #f0f0f0; padding: 1px 4px; border-radius: 2px; }
+  pre { background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #1a1a1a; padding: 10px 14px; font-size: 9pt; line-height: 1.4; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  pre code { background: none; padding: 0; }
+
+  /* diagrams */
+  .mermaid { margin: 14px 0; text-align: center; }
+  .ascii-diagram { background: #f8f8f8; border: 1px solid #ddd; padding: 12px 14px; margin: 10px 0; font-family: "Courier New", monospace; font-size: 8.5pt; line-height: 1.3; white-space: pre; overflow-x: auto; }
+
+  /* lists */
+  ul, ol { margin: 4px 0 12px 0; padding-left: 22px; }
+  li { margin: 2px 0; }
+
+  /* footer */
+  .footer { text-align: center; font-size: 9pt; color: #999; margin-top: 30px; border-top: 1px solid #ccc; padding-top: 10px; }
+
+  /* toc */
+  .toc { margin: 20px 0; }
+  .toc a { color: #1a1a1a; text-decoration: none; }
+  .toc ul { list-style: none; padding-left: 0; }
+  .toc li { margin: 3px 0; }
+  .toc .l1 { font-weight: 600; }
+  .toc .l2 { padding-left: 20px; font-size: 10.5pt; }
+
+  .ref-list { font-size: 10pt; }
+  .ref-list li { margin: 1px 0; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true,htmlLabels:true}, securityLevel:'loose'});</script>
+</head>
+<body>
+
+<!-- ========== COVER ========== -->
+<div class="cover">
+<h1>TBox 安全服务产品说明书</h1>
+<div class="sub">基于 OP-TEE 可信执行环境的密钥管理与密码学运算系统</div>
+<div class="divider"></div>
+<div class="meta">
+<p>版本：v1.0 &nbsp;|&nbsp; 日期：2026-07-22</p>
+<p>适用范围：基于 ARM TrustZone 的 TBox 车联网终端</p>
+</div>
+</div>
+
+<!-- ========== TOC ========== -->
+<h2>目录</h2>
+<div class="toc">
+<ul>
+<li class="l1"><a href="#ch1">第一章：产品概述</a></li>
+<li class="l2"><a href="#ch1-1">1.1 产品定义</a></li>
+<li class="l2"><a href="#ch1-2">1.2 核心价值</a></li>
+<li class="l2"><a href="#ch1-3">1.3 产品组件全景图</a></li>
+<li class="l1"><a href="#ch2">第二章：安全架构</a></li>
+<li class="l2"><a href="#ch2-1">2.1 可信执行环境</a></li>
+<li class="l2"><a href="#ch2-2">2.2 密钥存储加密链</a></li>
+<li class="l2"><a href="#ch2-3">2.3 密钥操作调用路径</a></li>
+<li class="l2"><a href="#ch2-4">2.4 安全启动信任链</a></li>
+<li class="l2"><a href="#ch2-5">2.5 安全边界总结</a></li>
+<li class="l1"><a href="#ch3">第三章：应用场景</a></li>
+<li class="l2"><a href="#ch3-1">3.1 场景总览</a></li>
+<li class="l2"><a href="#ch3-2">3.2 HTTPS 双向认证</a></li>
+<li class="l2"><a href="#ch3-3">3.3 MQTTS 双向认证</a></li>
+<li class="l2"><a href="#ch3-4">3.4 多业务密钥管理</a></li>
+<li class="l1"><a href="#ch4">第四章：产线灌装</a></li>
+<li class="l2"><a href="#ch4-1">4.1 灌装流程</a></li>
+<li class="l2"><a href="#ch4-2">4.2 证书签发</a></li>
+<li class="l2"><a href="#ch4-3">4.3 安全约束</a></li>
+<li class="l1"><a href="#ch5">第五章：开发集成</a></li>
+<li class="l2"><a href="#ch5-1">5.1 ENGINE SDK</a></li>
+<li class="l2"><a href="#ch5-2">5.2 HTTPS 集成</a></li>
+<li class="l2"><a href="#ch5-3">5.3 MQTTS 集成</a></li>
+<li class="l1"><a href="#ch6">第六章：运维与恢复</a></li>
+<li class="l2"><a href="#ch6-1">6.1 密钥生命周期</a></li>
+<li class="l2"><a href="#ch6-2">6.2 误操作恢复</a></li>
+<li class="l2"><a href="#ch6-3">6.3 故障排查</a></li>
+<li class="l1"><a href="#ch7">第七章：安全与合规</a></li>
+<li class="l2"><a href="#ch7-1">7.1 威胁模型</a></li>
+<li class="l2"><a href="#ch7-2">7.2 法规对齐</a></li>
+<li class="l1"><a href="#appendix">附录：技术指标与术语</a></li>
+</ul>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 1 -->
+<!-- ================================================================ -->
+<h2 id="ch1">第一章：产品概述</h2>
+
+<h3 id="ch1-1">1.1 产品定义</h3>
+
+<p>TBox 安全服务在车载终端 SoC 的 ARM TrustZone 安全区域中运行，利用 OP-TEE 操作系统和自研密钥管理 TA（Trusted Application），为设备提供以下核心安全能力：</p>
+
+<ul>
+<li><strong>密钥生成与存储</strong>：在安全区域内部生成 RSA/AES/SM2 等密钥，私钥永不出安全域</li>
+<li><strong>密码学运算</strong>：RSA 签名/验签、AES 加解密、RSA PKCS#1 解密等操作在 TEE 内完成</li>
+<li><strong>TLS 双向认证</strong>：通过 OpenSSL ENGINE 标准接口将密码学操作接入 HTTPS 和 MQTTS 协议栈</li>
+<li><strong>产线一机一密</strong>：每台设备在工厂灌装唯一密钥，配合 CA 证书体系实现设备身份认证</li>
+</ul>
+
+<h3 id="ch1-2">1.2 核心价值</h3>
+
+<table>
+<tr><th style="width:30%">价值</th><th>说明</th></tr>
+<tr><td>密钥不出安全域</td><td>私钥在 TEE 内生成、使用、销毁全生命周期不离开 ARM TrustZone</td></tr>
+<tr><td>标准协议兼容</td><td>通过 OpenSSL ENGINE API 无缝接入，应用层代码无需修改</td></tr>
+<tr><td>一机一密</td><td>每台设备唯一密钥，设备身份可认证、可追踪、可吊销</td></tr>
+<tr><td>硬件信任根</td><td>基于 SoC eFuse 中 HUK（硬件唯一密钥）的加密链，绑定芯片不可迁移</td></tr>
+<tr><td>车规级合规</td><td>架构对齐 ISO 21434 / WP.29 UN R155，支持国密算法扩展</td></tr>
+</table>
+
+<h3 id="ch1-3">1.3 产品组件全景图</h3>
+
+<div class="mermaid">
+flowchart TB
+    subgraph APP[应用层]
+        HTTPS["HTTPS Client<br/>curl / nginx"]
+        MQTTS["MQTTS Client<br/>paho + callback"]
+        KMS["KMS 密钥管理系统<br/>设备注册 + 证书管理"]
+    end
+
+    subgraph ENGINE_LAYER[ENGINE 层 — REE Normal World]
+        ENGINE["e_tbox_keystore.so<br/>RSA sign/verify/decrypt<br/>TEEC session mgmt<br/>label → UUID mapping"]
+    end
+
+    subgraph TA_LAYER[TA 层 — Secure World]
+        TA["tbox_keystore TA<br/>key gen / import / export / delete<br/>PIN mgmt + Lock<br/>ACL access control<br/>TEE Internal API crypto"]
+    end
+
+    subgraph HW[硬件层]
+        EFUSE["SoC eFuse (HUK)"]
+        BOOT["Secure Boot Chain"]
+        STORAGE["RPMB / REE FS<br/>安全存储"]
+    end
+
+    HTTPS -->|"OpenSSL EVP"| ENGINE
+    MQTTS -->|"OpenSSL EVP"| ENGINE
+    ENGINE -->|"TEEC / SMC"| TA
+    TA --> EFUSE
+    TA --> STORAGE
+    BOOT --> TA
+</div>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 2 -->
+<!-- ================================================================ -->
+<h2 id="ch2">第二章：安全架构</h2>
+
+<h3 id="ch2-1">2.1 可信执行环境</h3>
+
+<p>TBox 安全服务构建在 ARM TrustZone 技术之上，将 SoC 分为两个世界：</p>
+
+<table>
+<tr><th style="width:25%"></th><th>普通世界 (REE)</th><th>安全世界 (TEE)</th></tr>
+<tr><td>操作系统</td><td>Linux</td><td>OP-TEE OS</td></tr>
+<tr><td>CPU 模式</td><td>Non-Secure</td><td>Secure (S-EL1)</td></tr>
+<tr><td>内存访问</td><td>仅 REE 内存</td><td>REE 内存 + Secure RAM</td></tr>
+<tr><td>密钥可见性</td><td>仅公钥、label 字符串</td><td>全部密钥材料</td></tr>
+</table>
+
+<h3 id="ch2-2">2.2 密钥存储加密链</h3>
+
+<div class="mermaid">
+flowchart LR
+    HUK["<b>SoC eFuse (HUK)</b><br/>硬件唯一密钥<br/>每芯片不同<br/>REE 不可读"]
+    SSK["<b>SSK</b><br/>HMAC-SHA256(HUK, ChipID)<br/>安全存储密钥<br/>仅存 Secure RAM"]
+    TSK["<b>TSK</b><br/>HMAC-SHA256(SSK, TA_UUID)<br/>每个 TA 独立"]
+    FEK["<b>FEK</b><br/>PRNG() 每文件随机<br/>用 TSK 加密存于文件头"]
+    DATA["<b>AES-GCM 密文块</b><br/>密钥明文经 FEK 加密<br/>GCM 认证标签防篡改"]
+    PHYSICAL["物理存储<br/>/data/tee/N<br/>或 eMMC RPMB"]
+
+    HUK --> SSK --> TSK --> FEK --> DATA --> PHYSICAL
+</div>
+
+<p>即使攻击者 dump 了 REE 侧全部文件系统，得到的也只是 AES-GCM 密文块。没有 HUK 无法派生出任何解密密钥。</p>
+
+<h3 id="ch2-3">2.3 密钥操作调用路径</h3>
+
+<p>以 TLS 握手 CertificateVerify 签名为例：</p>
+
+<div class="mermaid">
+sequenceDiagram
+    participant APP as TLS Application<br/>(REE)
+    participant OS as OpenSSL<br/>EVP_DigestSign
+    participant ENG as e_tbox_keystore.so<br/>(REE)
+    participant OPTEE as OP-TEE Core<br/>(Secure EL1)
+    participant TA as tbox_keystore TA<br/>(Secure User)
+
+    APP->>OS: SSL_connect()
+    OS->>ENG: rsa_sign(digest)
+    ENG->>OPTEE: TEEC_InvokeCommand(CMD_SIGN, label, digest)
+    OPTEE->>OPTEE: SMC #0 → CPU 切到 Secure World
+    OPTEE->>TA: TA_InvokeCommandEntryPoint
+    TA->>TA: keystore_load(label) → 从安全存储恢复密钥
+    TA->>TA: TEE_AsymmetricSignDigest(SHA256)
+    TA-->>OPTEE: 签名结果
+    OPTEE-->>ENG: op.params[2]
+    ENG-->>OS: *siglen = 256, return 1
+    OS-->>APP: TLS 握手继续
+</div>
+
+<h3 id="ch2-4">2.4 安全启动信任链</h3>
+
+<div class="mermaid">
+flowchart LR
+    ROM["BootROM<br/>(片上 ROM, 不可篡改)"]
+    SPL["SPL / U-Boot<br/>(公钥 Hash 来自 eFuse)"]
+    OPTEE_OS["OP-TEE OS<br/>(tee-pager.bin)"]
+    TA_BIN["tbox_keystore TA<br/>(.ta 签名)"]
+    LINUX["Linux Kernel<br/>+ initramfs"]
+
+    ROM -->|"验签"| SPL -->|"验签"| OPTEE_OS -->|"验签"| TA_BIN
+    OPTEE_OS -->|"验签"| LINUX
+</div>
+
+<p>每级镜像的签名由上一级验证，信任锚固定在 SoC eFuse 中，形成不可绕过的信任链。</p>
+
+<h3 id="ch2-5">2.5 安全边界总结</h3>
+
+<table>
+<tr><th>攻击面</th><th>防护</th><th style="width:12%">等级</th></tr>
+<tr><td>REE 直接读安全存储文件</td><td>AES-GCM 加密，密钥在 TEE 内</td><td>✅ 机密性</td></tr>
+<tr><td>REE 篡改安全存储文件</td><td>GCM 认证标签校验</td><td>✅ 完整性</td></tr>
+<tr><td>物理 dump eMMC</td><td>密钥链绑定 SoC HUK</td><td>✅ 硬件绑定</td></tr>
+<tr><td>替换 TA 二进制</td><td>TA 签名验签</td><td>✅ 防篡改</td></tr>
+<tr><td>回滚旧密钥文件</td><td>RPMB 硬件写计数器</td><td>✅ 防回滚</td></tr>
+<tr><td>恶意应用调用 TA</td><td>PIN + Lock 访问控制</td><td>✅ 访问控制</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 3 -->
+<!-- ================================================================ -->
+<h2 id="ch3">第三章：应用场景</h2>
+
+<h3 id="ch3-1">3.1 场景总览</h3>
+
+<div class="mermaid">
+flowchart TB
+    subgraph CLOUD[云端]
+        SERVER["TLS Server<br/>(nginx / Apache)"]
+        EMQX["EMQX Broker<br/>:8883"]
+        CA["KMS / CA<br/>证书签发"]
+    end
+
+    subgraph DEVICE[TBox Device]
+        direction TB
+        HTTPS_C["https_client<br/>curl --engine"]
+        PUB["mqtts_pub<br/>(遥测上传)"]
+        SUB["mqtts_sub<br/>(指令接收)"]
+
+        ENGINE_LAYER["e_tbox_keystore.so<br/>ENGINE 回调"]
+        TA_LAYER["tbox_keystore TA<br/>Secure World"]
+
+        HTTPS_C --> ENGINE_LAYER
+        PUB --> ENGINE_LAYER
+        SUB --> ENGINE_LAYER
+        ENGINE_LAYER --> TA_LAYER
+    end
+
+    SERVER <-->|"HTTPS<br/>TLS 1.2 双向认证"| HTTPS_C
+    EMQX <-->|"MQTTS<br/>TLS 1.2 双向认证"| PUB
+    EMQX <-->|"MQTTS"| SUB
+    CA -->|"签发设备证书"| DEVICE
+    CA -->|"签发 Broker 证书"| EMQX
+</div>
+
+<h3 id="ch3-2">3.2 HTTPS 双向认证</h3>
+
+<p>应用层使用标准 OpenSSL API，只需在 SSL_CTX 初始化时通过 ENGINE 加载 TA 私钥：</p>
+
+<pre><code>ENGINE_load_tbox_keystore();
+ENGINE *e = ENGINE_by_id("tbox_keystore");
+EVP_PKEY *pkey = ENGINE_load_private_key(e, "tls-key", NULL, NULL);
+SSL_CTX_use_PrivateKey(ctx, pkey);
+// 后续 TLS 握手自动使用 TEE 密钥</code></pre>
+
+<p>已通过 <code>https_client</code> 程序完成端到端验证：ENGINE 加载 TA 密钥 → TLS 握手 → HTTPS GET → HTTP 200 OK。</p>
+
+<h3 id="ch3-3">3.3 MQTTS 双向认证</h3>
+
+<p>paho.mqtt.c 库通过最小补丁（<code>SSLSocket_setExternalConfigCallback</code>）支持外部 SSL 配置注入。当 <code>privateKey = "__EXTERNAL_CONFIG__"</code> 时，paho 在创建 SSL_CTX 后自动调用回调完成 ENGINE 凭据加载。</p>
+
+<pre><code>SSLSocket_setExternalConfigCallback(tbox_ssl_config_pub);
+MQTTClient_create(&client, "ssl://broker:8883", "tbox-device", ...);
+ssl_opts.privateKey = "__EXTERNAL_CONFIG__";
+MQTTClient_connect(client, &conn_opts);
+// TLS 握手签名走 ENGINE → TA</code></pre>
+
+<h3 id="ch3-4">3.4 多业务密钥管理</h3>
+
+<table>
+<tr><th>业务</th><th>Key Label</th><th>证书</th><th>用途</th></tr>
+<tr><td>TLS 服务</td><td><code>tls-key</code></td><td>tls.crt</td><td>HTTPS 双向认证</td></tr>
+<tr><td>OTA 升级</td><td><code>ota-key</code></td><td>ota.crt</td><td>OTA 包签名</td></tr>
+<tr><td>日志加密</td><td><code>log-key</code></td><td>—</td><td>AES 对称加密</td></tr>
+<tr><td>MQTT 发布</td><td><code>pub-key</code></td><td>pub.crt</td><td>遥测数据上传</td></tr>
+<tr><td>MQTT 订阅</td><td><code>sub-key</code></td><td>sub.crt</td><td>远程指令接收</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 4 -->
+<!-- ================================================================ -->
+<h2 id="ch4">第四章：产线灌装</h2>
+
+<h3 id="ch4-1">4.1 灌装流程</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant K as 工控机/KMS
+    participant D as TBox 设备
+
+    K->>D: [1] 扫码序列号, 设备上电
+    D-->>K: ChipID + HUK 指纹
+    K->>K: [2] 验证 HUK 指纹
+    K->>D: [3] 发送灌装 PIN
+    D->>D: TA: --init-pin
+    K->>D: [4] 发送密钥生成指令
+    D->>D: TA: --gen-rsa tls-key<br/>TA: --gen-rsa pub-key<br/>TA: --gen-rsa sub-key
+    D-->>K: [5] 导出公钥
+    K->>K: 签发设备证书<br/>KMS 注册
+    K->>D: [6] 发送 Lock 指令
+    D->>D: TA: --lock (永久锁定写入)
+    Note over K,D: [7] 断电，取走设备
+</div>
+
+<h3 id="ch4-2">4.2 证书签发</h3>
+
+<div class="mermaid">
+flowchart LR
+    ROOT["<b>Root CA</b><br/>root-ca.crt<br/>自签名"]
+    BROKER["<b>Broker</b><br/>broker.crt<br/>broker.key (软件)"]
+    PUB["<b>Publisher</b><br/>pub.crt<br/>pub-key (TA 内)"]
+    SUB["<b>Subscriber</b><br/>sub.crt<br/>sub-key (TA 内)"]
+
+    ROOT -->|"签发"| BROKER
+    ROOT -->|"签发"| PUB
+    ROOT -->|"签发"| SUB
+</div>
+
+<h3 id="ch4-3">4.3 安全约束</h3>
+
+<table>
+<tr><th style="width:20%">约束</th><th>措施</th></tr>
+<tr><td>物理安全</td><td>工厂车间门禁 + 摄像头监控</td></tr>
+<tr><td>网络安全</td><td>工控机与设备直连 USB/专用 VLAN，不接入公网</td></tr>
+<tr><td>PIN 管理</td><td>灌装 PIN 由 KMS 生成，灌装完成后立即废弃</td></tr>
+<tr><td>Lock 机制</td><td>灌装完成后 TA 永久锁定，禁止新增/删除密钥</td></tr>
+<tr><td>审计日志</td><td>每台设备记录时间戳、操作员、序列号、公钥指纹</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 5 -->
+<!-- ================================================================ -->
+<h2 id="ch5">第五章：开发集成</h2>
+
+<h3 id="ch5-1">5.1 ENGINE SDK</h3>
+
+<table>
+<tr><th style="width:22%">组件</th><th style="width:28%">文件</th><th>用途</th></tr>
+<tr><td>ENGINE 共享库</td><td><code>libe_tbox_keystore.so</code></td><td>链接到应用进程，注册 OpenSSL ENGINE</td></tr>
+<tr><td>TA 二进制</td><td><code>f8e9209a-*.ta</code></td><td>部署到 <code>/lib/optee_armtz/</code>，Secure World 运行</td></tr>
+<tr><td>公开头文件</td><td><code>tbox_keystore_ta.h</code></td><td>UUID、命令 ID 定义</td></tr>
+<tr><td>CA 工具</td><td><code>tbox_keystore</code> CLI</td><td>命令行密钥管理（灌装、查询、签名）</td></tr>
+</table>
+
+<h3 id="ch5-2">5.2 HTTPS 集成</h3>
+
+<div class="mermaid">
+flowchart LR
+    A["Application Code"] -->|"SSL_CTX_use_PrivateKey"| B["ENGINE"]
+    B -->|"TEEC_InvokeCommand"| C["TA"]
+    C -->|"TEE_AsymmetricSignDigest"| D["HW Crypto"]
+    subgraph REE["REE"]
+        A
+        B
+    end
+    subgraph TEE["Secure World"]
+        C
+        D
+    end
+</div>
+
+<p>应用层使用标准 OpenSSL API，无需修改业务逻辑。TLS 握手时私钥操作自动路由到 TA。</p>
+
+<h3 id="ch5-3">5.3 MQTTS 集成</h3>
+
+<div class="mermaid">
+flowchart LR
+    APP["mqtts_pub / mqtts_sub"] -->|"SSLSocket_setExternalConfigCallback"| PAHO["paho.mqtt.c<br/>(patched)"]
+    PAHO -->|"privateKey=__EXTERNAL_CONFIG__"| CB["tbox_ssl_config(ctx)"]
+    CB -->|"ENGINE_load_private_key"| ENG["e_tbox_keystore.so"]
+    ENG -->|"TEEC → SMC"| TA["tbox_keystore TA"]
+</div>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 6 -->
+<!-- ================================================================ -->
+<h2 id="ch6">第六章：运维与恢复</h2>
+
+<h3 id="ch6-1">6.1 密钥生命周期</h3>
+
+<div class="mermaid">
+stateDiagram-v2
+    UNSET: UNSET<br/>TA 未灌装
+    SET: SET<br/>PIN 已设置
+    READY: READY<br/>密钥已生成
+    LOCKED: LOCKED<br/>生产锁定
+    FINAL: FINAL<br/>不可逆
+
+    [*] --> UNSET
+    UNSET --> SET: init-pin
+    SET --> READY: gen-rsa / gen-aes
+    READY --> LOCKED: --lock
+    LOCKED --> FINAL: --final-lock
+    FINAL --> [*]: 设备退役
+</div>
+
+<table>
+<tr><th>状态</th><th>生成密钥</th><th>删除密钥</th><th>签名/验签</th><th>加解密</th></tr>
+<tr><td>UNSET</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>SET / READY</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>LOCKED / FINAL</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td></tr>
+</table>
+
+<h3 id="ch6-2">6.2 误操作恢复</h3>
+
+<table>
+<tr><th style="width:10%">级别</th><th style="width:22%">手段</th><th style="width:22%">授权方式</th><th>适用场景</th></tr>
+<tr><td>Lv0</td><td>改 UUID 重新编译 TA / 擦除 REE FS</td><td>无（仅开发板）</td><td>开发调试</td></tr>
+<tr><td>Lv1</td><td>工控机签名 unlock 命令（N 小时窗口）</td><td>工控机 HSM</td><td>产线误操作</td></tr>
+<tr><td>Lv2</td><td>SO PIN 验证后解锁</td><td>管理员 PIN</td><td>出厂后未 final-lock</td></tr>
+<tr><td>Lv3</td><td>设备退回工厂，HSM 签名恢复镜像</td><td>物理接触 + HSM</td><td>RMA 返厂</td></tr>
+<tr><td>Lv4</td><td>不可恢复（final-lock 后彻底锁定）</td><td>无</td><td>最高安全需求</td></tr>
+</table>
+
+<h3 id="ch6-3">6.3 故障排查</h3>
+
+<table>
+<tr><th>现象</th><th>检查点</th></tr>
+<tr><td>ENGINE init 失败</td><td><code>ls /lib/optee_armtz/*.ta</code> 确认 TA 已部署</td></tr>
+<tr><td>Key not found</td><td><code>tbox_keystore --info &lt;label&gt;</code> 确认密钥已灌装</td></tr>
+<tr><td>TLS 握手失败</td><td>检查证书是否由同一 Root CA 签发，时钟是否同步</td></tr>
+<tr><td>MQTT CONNECT 失败</td><td>先测 TCP (<code>telnet broker port</code>)，再查证书验证</td></tr>
+<tr><td>跨进程冲突</td><td>每进程只访问自己的 key label，避免并发操作同一持久化对象</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 7 -->
+<!-- ================================================================ -->
+<h2 id="ch7">第七章：安全与合规</h2>
+
+<h3 id="ch7-1">7.1 威胁模型</h3>
+
+<table>
+<tr><th style="width:22%">威胁</th><th style="width:22%">攻击面</th><th>防护</th></tr>
+<tr><td>提取私钥</td><td>REE 内存 dump</td><td>私钥仅在 TEE Secure RAM，REE 不可见</td></tr>
+<tr><td>替换密钥</td><td>篡改安全存储文件</td><td>AES-GCM 完整性校验</td></tr>
+<tr><td>重放攻击</td><td>回滚旧密钥文件</td><td>RPMB 硬件写计数器</td></tr>
+<tr><td>伪造设备</td><td>克隆设备证书</td><td>HUK 硬件绑定，换芯片失效</td></tr>
+<tr><td>供应链攻击</td><td>替换 TA 二进制</td><td>Secure Boot 验签链</td></tr>
+<tr><td>侧信道攻击</td><td>时序/功耗分析</td><td>HW Crypto Cell 常数时间运算</td></tr>
+</table>
+
+<h3 id="ch7-2">7.2 法规对齐</h3>
+
+<table>
+<tr><th style="width:22%">法规</th><th style="width:30%">要求</th><th>实现</th></tr>
+<tr><td>ISO 21434</td><td>道路车辆网络安全</td><td>TARA 威胁分析 + 安全启动 + 密钥管理审计</td></tr>
+<tr><td>WP.29 UN R155</td><td>车辆网络安全认证</td><td>OTA 安全更新 + 事件响应</td></tr>
+<tr><td>GDPR</td><td>个人数据保护</td><td>密钥销毁证明 + 设备退役流程</td></tr>
+<tr><td>国密 GM/T</td><td>商用密码</td><td>架构支持 SM2/SM3/SM4 扩展</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- APPENDIX -->
+<!-- ================================================================ -->
+<h2 id="appendix">附录：技术指标与术语</h2>
+
+<h3>A.1 技术指标</h3>
+
+<table>
+<tr><th style="width:38%">指标</th><th>值</th></tr>
+<tr><td>RSA-2048 签名延迟</td><td>&lt; 50 ms（TEE 内运算）</td></tr>
+<tr><td>RSA-2048 密钥存储</td><td>~3 KB / 个</td></tr>
+<tr><td>最大密钥数量</td><td>受安全存储分区大小限制（典型 ~100 个）</td></tr>
+<tr><td>OpenSSL 版本</td><td>1.1.1w</td></tr>
+<tr><td>paho.mqtt.c 版本</td><td>1.3.16（带补丁）</td></tr>
+<tr><td>安全存储后端</td><td>REE FS（开发）/ RPMB（量产）</td></tr>
+<tr><td>并发模型</td><td>每进程独立 TEEC session + session 级密钥缓存</td></tr>
+</table>
+
+<h3>A.2 术语表</h3>
+
+<table>
+<tr><th style="width:15%">术语</th><th>说明</th></tr>
+<tr><td>TEE</td><td>Trusted Execution Environment，可信执行环境</td></tr>
+<tr><td>REE</td><td>Rich Execution Environment，普通执行环境（Linux）</td></tr>
+<tr><td>TA</td><td>Trusted Application，运行在 TEE 中的应用程序</td></tr>
+<tr><td>CA</td><td>Client Application，运行在 REE 中调用 TA 的程序</td></tr>
+<tr><td>HUK</td><td>Hardware Unique Key，SoC eFuse 中的硬件唯一密钥</td></tr>
+<tr><td>SSK</td><td>Secure Storage Key，由 HUK 派生的安全存储密钥</td></tr>
+<tr><td>TSK</td><td>TA Storage Key，每个 TA 独立的存储密钥</td></tr>
+<tr><td>FEK</td><td>File Encryption Key，每个持久化文件一个的加密密钥</td></tr>
+<tr><td>ENGINE</td><td>OpenSSL 的扩展机制，用于将密码学操作外挂到外部硬件</td></tr>
+<tr><td>RPMB</td><td>Replay Protected Memory Block，eMMC 防回滚安全分区</td></tr>
+<tr><td>KMS</td><td>Key Management System，密钥管理系统</td></tr>
+</table>
+
+<h3>A.3 相关技术文档</h3>
+
+<ul class="ref-list">
+<li><a href="01-architecture-overview.md">01-architecture-overview.md</a> — 五种方案对比与选型</li>
+<li><a href="05-key-storage.md">05-key-storage.md</a> — 密钥 TEE 内存储机制详解</li>
+<li><a href="07-provisioning-procedure.md">07-provisioning-procedure.md</a> — 产线灌装详细流程</li>
+<li><a href="13-openssl-engine-integration.md">13-openssl-engine-integration.md</a> — ENGINE 集成完整方案</li>
+<li><a href="14-brick-recovery-and-best-practices.md">14-brick-recovery-and-best-practices.md</a> — 变砖场景与救砖方案</li>
+<li><a href="15-engine-debug-issues.md">15-engine-debug-issues.md</a> — ENGINE 调试 15 个问题全记录</li>
+<li><a href="16-multi-process-concurrency-analysis.md">16-multi-process-concurrency-analysis.md</a> — 多进程并发分析</li>
+<li><a href="18-mqtt-mutual-auth-demo.md">18-mqtt-mutual-auth-demo.md</a> — MQTT 双向认证方案</li>
+<li><a href="20-mqtts-debug-issues.md">20-mqtts-debug-issues.md</a> — MQTTS 调试 7 个问题全记录</li>
+</ul>
+
+<div class="footer">
+TBox 安全服务产品说明书 v1.0 &nbsp;|&nbsp; 机密 &nbsp;|&nbsp; 2026-07-22
+</div>
+
+</body>
+</html>

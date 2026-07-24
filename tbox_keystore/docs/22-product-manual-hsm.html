@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>TBox 安全服务产品说明书 (安全芯片版) v1.0</title>
+<style>
+  @page { size: A4; margin: 22mm 18mm 22mm 18mm; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page-break { page-break-before: always; }
+    h2 { page-break-after: avoid; }
+    .mermaid svg { max-width: 100%; height: auto; }
+  }
+  @media screen {
+    body { max-width: 170mm; margin: 0 auto; padding: 20px 0; }
+  }
+  body {
+    font-family: "Noto Sans SC", "Source Han Sans CN", "SimSun", "Microsoft YaHei", sans-serif;
+    font-size: 11pt; line-height: 1.65; color: #1a1a1a;
+  }
+  .cover { text-align: center; padding: 60px 0 30px 0; }
+  .cover h1 { font-size: 24pt; font-weight: 700; margin-bottom: 8px; letter-spacing: 2px; }
+  .cover .sub { font-size: 12pt; color: #555; margin-bottom: 30px; }
+  .cover .arch { font-size: 10.5pt; color: #333; margin-bottom: 6px; }
+  .cover .meta { font-size: 10pt; color: #777; }
+  .cover .meta p { margin: 2px 0; }
+  .cover .divider { width: 60%; height: 1px; background: #1a1a1a; margin: 20px auto; }
+  h2 { font-size: 15pt; font-weight: 700; margin: 28px 0 12px 0; padding-bottom: 4px; border-bottom: 1.5px solid #1a1a1a; }
+  h3 { font-size: 12.5pt; font-weight: 600; margin: 20px 0 8px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; font-size: 10pt; }
+  th { background: #1a1a1a; color: #fff; padding: 6px 8px; text-align: left; font-weight: 600; }
+  td { border-bottom: 1px solid #ccc; padding: 5px 8px; }
+  tr:nth-child(even) td { background: #f7f7f7; }
+  code { font-family: "JetBrains Mono", "Consolas", "Courier New", monospace; font-size: 9pt; background: #f0f0f0; padding: 1px 4px; border-radius: 2px; }
+  pre { background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #1a1a1a; padding: 10px 14px; font-size: 9pt; line-height: 1.4; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  pre code { background: none; padding: 0; }
+  .mermaid { margin: 14px 0; text-align: center; }
+  ul, ol { margin: 4px 0 12px 0; padding-left: 22px; }
+  li { margin: 2px 0; }
+  .footer { text-align: center; font-size: 9pt; color: #999; margin-top: 30px; border-top: 1px solid #ccc; padding-top: 10px; }
+  .toc { margin: 20px 0; }
+  .toc a { color: #1a1a1a; text-decoration: none; }
+  .toc ul { list-style: none; padding-left: 0; }
+  .toc li { margin: 3px 0; }
+  .toc .l1 { font-weight: 600; }
+  .toc .l2 { padding-left: 20px; font-size: 10.5pt; }
+  .ref-list { font-size: 10pt; }
+  .ref-list li { margin: 1px 0; }
+  .badge { display: inline-block; background: #1a1a1a; color: #fff; font-size: 9pt; padding: 1px 8px; border-radius: 10px; margin-right: 6px; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true,htmlLabels:true}, securityLevel:'loose'});</script>
+</head>
+<body>
+
+<!-- ========== COVER ========== -->
+<div class="cover">
+<h1>TBox 安全服务产品说明书</h1>
+<div class="sub">基于独立安全芯片的密钥管理与密码学运算系统</div>
+<div class="arch"><span class="badge">安全芯片</span> 华大 CIU98B &nbsp;|&nbsp; <span class="badge">架构</span> HSM ENGINE + paho 回调注入</div>
+<div class="divider"></div>
+<div class="meta">
+<p>版本：v1.0 &nbsp;|&nbsp; 日期：2026-07-22</p>
+<p>适用范围：基于独立 HSM 安全芯片的 TBox 车联网终端</p>
+</div>
+</div>
+
+<!-- ========== TOC ========== -->
+<h2>目录</h2>
+<div class="toc">
+<ul>
+<li class="l1"><a href="#ch1">第一章：产品概述</a></li>
+<li class="l2">1.1 产品定义 &nbsp;|&nbsp; 1.2 核心价值 &nbsp;|&nbsp; 1.3 产品组件全景图</li>
+<li class="l1"><a href="#ch2">第二章：安全架构</a></li>
+<li class="l2">2.1 安全芯片架构 &nbsp;|&nbsp; 2.2 密钥安全边界 &nbsp;|&nbsp; 2.3 SDK 软件栈</li>
+<li class="l1"><a href="#ch3">第三章：应用场景</a></li>
+<li class="l2">3.1 场景总览 &nbsp;|&nbsp; 3.2 HTTPS 双向认证 &nbsp;|&nbsp; 3.3 MQTTS 双向认证</li>
+<li class="l1"><a href="#ch4">第四章：产线灌装</a></li>
+<li class="l2">4.1 灌装流程 &nbsp;|&nbsp; 4.2 证书签发 &nbsp;|&nbsp; 4.3 安全约束</li>
+<li class="l1"><a href="#ch5">第五章：开发集成</a></li>
+<li class="l2">5.1 SDK 组成 &nbsp;|&nbsp; 5.2 HTTPS 集成 &nbsp;|&nbsp; 5.3 MQTTS 集成</li>
+<li class="l1"><a href="#ch6">第六章：运维与恢复</a></li>
+<li class="l1"><a href="#ch7">第七章：安全与合规</a></li>
+<li class="l1"><a href="#appendix">附录：技术指标与术语</a></li>
+</ul>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 1 -->
+<!-- ================================================================ -->
+<h2 id="ch1">第一章：产品概述</h2>
+
+<h3>1.1 产品定义</h3>
+
+<p>TBox 安全服务在设备主板上搭载一颗独立安全芯片（华大 CIU98B），通过芯片厂商 SDK 和自研交付库（<code>libtbox_delivery.so</code>）为上层应用提供以下核心安全能力：</p>
+
+<ul>
+<li><strong>密钥安全存储</strong>：设备 RSA 私钥、证书、CA 链在芯片出厂时烧录，明文永不出芯片</li>
+<li><strong>密码学运算</strong>：RSA 签名/验签、PKCS#1 解密等操作在安全芯片内部完成</li>
+<li><strong>TLS 双向认证</strong>：通过 HSM ENGINE + paho 回调注入将密钥操作接入 HTTPS 和 MQTTS 协议栈</li>
+<li><strong>产线一机一密</strong>：每台设备的密钥和证书在芯片封测阶段烧录，工厂灌装仅做 PIN 设置和检查</li>
+</ul>
+
+<h3>1.2 核心价值</h3>
+
+<table>
+<tr><th style="width:30%">价值</th><th>说明</th></tr>
+<tr><td>密钥不出安全芯片</td><td>私钥在安全芯片内生成和存储，全生命周期不离开芯片物理边界</td></tr>
+<tr><td>标准协议兼容</td><td>通过 OpenSSL HSM ENGINE + paho 回调注入，应用层无需适配</td></tr>
+<tr><td>硬件信任根</td><td>安全芯片自带真随机数发生器 (TRNG) 和防篡改保护</td></tr>
+<tr><td>一机一密</td><td>每台设备芯片内烧录唯一密钥，设备身份可认证、可追溯</td></tr>
+<tr><td>车规级</td><td>安全芯片通过 AEC-Q100 认证，支持 -40°C ~ 105°C 工作温度</td></tr>
+</table>
+
+<h3>1.3 产品组件全景图</h3>
+
+<div class="mermaid">
+flowchart TB
+    subgraph APP[应用层]
+        HTTPS["HTTPS Client<br/>curl / nginx"]
+        MQTTS["MQTTS Client<br/>paho + callback"]
+    end
+
+    subgraph SDK[SDK 层 — REE]
+        DELIVERY["libtbox_delivery.so<br/>ConfigSSLWithHsm(ctx)<br/>InitHsm / LoadCert / LoadKey"]
+        PAHO["libpaho-mqtt3cs.so<br/>(已打补丁)<br/>SSLSocket_setExternalConfigCallback"]
+    end
+
+    subgraph HSM_LAYER[安全芯片驱动层]
+        NLSAFE["libnlsafe.so<br/>安全芯片中间件"]
+        HEDSDK["libhedsdk_ciu98b.so<br/>华大 CIU98B SDK"]
+    end
+
+    subgraph CHIP[安全芯片 — 硬件]
+        ENGINE_HSM["HSM ENGINE<br/>芯片内置 OpenSSL ENGINE"]
+        STORE["芯片内存储<br/>kDevicePrivateRsaKey<br/>kDevicePrivateRsaCert<br/>kCA / kSubCert"]
+        CRYPTO["硬件密码学引擎<br/>RSA / AES / SM2"]
+    end
+
+    HTTPS -->|"SSL_CTX_use_PrivateKey"| DELIVERY
+    MQTTS -->|"privateKey=__EXTERNAL_CONFIG__"| PAHO
+    PAHO -->|"回调"| DELIVERY
+    DELIVERY --> NLSAFE --> HEDSDK --> CHIP
+</div>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 2 -->
+<!-- ================================================================ -->
+<h2 id="ch2">第二章：安全架构</h2>
+
+<h3>2.1 安全芯片架构</h3>
+
+<p>华大 CIU98B 安全芯片通过 SPI/I2C 总线与主 SoC 连接。芯片内部运行独立的固件，对外暴露 PKCS#11 风格的安全存储槽位和 HSM ENGINE 接口。</p>
+
+<table>
+<tr><th style="width:25%"></th><th>主 SoC (REE)</th><th>安全芯片 (HSM)</th></tr>
+<tr><td>处理器</td><td>ARM Cortex-A / M 应用核心</td><td>专用安全控制器</td></tr>
+<tr><td>操作系统</td><td>Linux</td><td>芯片固件</td></tr>
+<tr><td>密钥可见性</td><td>仅公钥</td><td>完整密钥材料</td></tr>
+<tr><td>物理防护</td><td>无</td><td>防篡改 + 侧信道防护</td></tr>
+<tr><td>通信接口</td><td>—</td><td>SPI / I2C</td></tr>
+</table>
+
+<h3>2.2 密钥安全边界</h3>
+
+<div class="mermaid">
+flowchart TB
+    subgraph REE[主 SoC — REE]
+        APP2["应用进程"]
+        DELIV["libtbox_delivery.so"]
+    end
+
+    subgraph PHY[物理边界]
+        SPI["SPI / I2C 总线"]
+    end
+
+    subgraph HSM[华大 CIU98B 安全芯片]
+        FW["芯片固件"]
+        SLOTS["安全存储槽位"]
+        RSA_ENGINE["RSA 引擎"]
+    end
+
+    APP2 -->|"ConfigSSLWithHsm(ctx)"| DELIV
+    DELIV -->|"libnlsafe.so"| SPI
+    SPI -->|"加密通道"| FW
+    FW --> SLOTS
+    FW --> RSA_ENGINE
+
+    SLOTS -.-|"OTA_KEY<br/>(设备私钥)"| NOTE1["永不出芯片"]
+    SLOTS -.-|"OTA_CERT<br/>(设备证书)"| NOTE2["X.509 证书"]
+    SLOTS -.-|"OTA_CA_CERT<br/>(根 CA)"| NOTE3["信任锚"]
+</div>
+
+<h3>2.3 SDK 软件栈</h3>
+
+<div class="mermaid">
+flowchart LR
+    APP3["Application<br/>paho_mqtts_demo.c"]
+    H["tbox/UtlForHsm.h"]
+    DEL["libtbox_delivery.so"]
+    ROUTER["librouter_common.so"]
+    NLSAFE2["libnlsafe.so"]
+    HED["libhedsdk_ciu98b.so"]
+    CHIP3["CIU98B 芯片"]
+
+    APP3 --> H --> DEL
+    DEL --> ROUTER --> NLSAFE2 --> HED --> CHIP3
+
+    subgraph DELIVERED[随 SDK 分发]
+        H
+        DEL
+        ROUTER
+    end
+
+    subgraph PLATFORM[设备预装]
+        NLSAFE2
+        HED
+    end
+</div>
+
+<p>应用只需 <code>#include &lt;tbox/UtlForHsm.h&gt;</code> 并链接 <code>libtbox_delivery.so</code>。NL 系列中间件和芯片驱动由设备镜像预装，应用无需感知。</p>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 3 -->
+<!-- ================================================================ -->
+<h2 id="ch3">第三章：应用场景</h2>
+
+<h3>3.1 场景总览</h3>
+
+<div class="mermaid">
+flowchart TB
+    subgraph CLOUD[云端]
+        SERVER["TLS Server<br/>(nginx / Apache)"]
+        EMQX["EMQX Broker<br/>:8883"]
+        KMS2["KMS / CA<br/>证书签发"]
+    end
+
+    subgraph DEVICE[TBox Device]
+        direction TB
+        HTTPS_C["https_client"]
+        PUB["mqtts_pub<br/>(遥测上传)"]
+        SUB["mqtts_sub<br/>(指令接收)"]
+
+        DELIVERY2["libtbox_delivery.so<br/>ConfigSSLWithHsm(ctx)"]
+        CHIP2["CIU98B 安全芯片<br/>HSM ENGINE"]
+
+        HTTPS_C --> DELIVERY2
+        PUB --> DELIVERY2
+        SUB --> DELIVERY2
+        DELIVERY2 --> CHIP2
+    end
+
+    SERVER <-->|"HTTPS<br/>TLS 1.2 双向认证"| HTTPS_C
+    EMQX <-->|"MQTTS<br/>TLS 1.2 双向认证"| PUB
+    EMQX <-->|"MQTTS"| SUB
+    KMS2 -->|"签发设备证书"| DEVICE
+    KMS2 -->|"签发 Broker 证书"| EMQX
+</div>
+
+<h3>3.2 HTTPS 双向认证</h3>
+
+<p>应用通过 <code>ConfigSSLWithHsm(ctx)</code> 一次性注入芯片凭据，之后 TLS 握手中的私钥操作由 HSM ENGINE 在安全芯片内部完成：</p>
+
+<pre><code>SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
+InitHsm();                       // 初始化安全芯片 + 加载 HSM ENGINE
+ConfigSSLWithHsm(ctx);           // 注入设备证书 / 私钥(ENGINE引用) / CA 链
+SSL *ssl = SSL_new(ctx);
+SSL_connect(ssl);                // TLS 握手 — 签名在芯片内完成</code></pre>
+
+<h3>3.3 MQTTS 双向认证</h3>
+
+<p>paho.mqtt.c 库通过补丁（<code>SSLSocket_setExternalConfigCallback</code>）支持外部 SSL 配置注入，回调中调用 <code>ConfigSSLWithHsm</code>：</p>
+
+<pre><code>InitHsm();
+SSLSocket_setExternalConfigCallback(ConfigSSLWithHsm);
+
+MQTTClient_create(&client, "ssl://broker:8883", "tbox-device", ...);
+
+ssl_opts.privateKey = "__EXTERNAL_CONFIG__";   // 触发 paho 回调
+MQTTClient_connect(client, &conn_opts);         // 回调中注入 HSM 凭据
+
+MQTTClient_publishMessage(client, topic, &msg, &token);
+MQTTClient_subscribe(client, topic, 1);</code></pre>
+
+<div class="mermaid">
+sequenceDiagram
+    participant APP as mqtts_pub
+    participant PAHO as paho.mqtt.c<br/>(patched)
+    participant DELIV as libtbox_delivery.so
+    participant HSM as CIU98B 芯片
+
+    APP->>PAHO: MQTTClient_connect
+    PAHO->>PAHO: SSL_CTX_new()
+    PAHO->>DELIV: ConfigSSLWithHsm(ctx)
+    DELIV->>DELIV: SSL_CTX_use_certificate
+    DELIV->>DELIV: SSL_CTX_use_PrivateKey<br/>(HSM ENGINE key)
+    DELIV->>DELIV: SSL_CTX_load_verify_locations(CA)
+    DELIV-->>PAHO: 0 (success)
+    PAHO->>PAHO: SSL_connect()
+    PAHO->>HSM: 签名 CertificateVerify<br/>(芯片内 m^d mod n)
+    HSM-->>PAHO: 签名结果
+    PAHO-->>APP: MQTT CONNECT OK
+</div>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 4 -->
+<!-- ================================================================ -->
+<h2 id="ch4">第四章：产线灌装</h2>
+
+<h3>4.1 灌装流程</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant CHIP_FAB as 芯片封测厂
+    participant FACT as 工厂工控机 / KMS
+    participant DEV as TBox 设备
+
+    Note over CHIP_FAB: 上游阶段
+    CHIP_FAB->>CHIP_FAB: 生成 RSA 密钥对
+    CHIP_FAB->>CHIP_FAB: 签发设备证书 + CA 链
+    CHIP_FAB->>CHIP_FAB: 烧录到 CIU98B<br/>kDevicePrivateRsaKey<br/>kDevicePrivateRsaCert<br/>kCA / kSubCert
+
+    Note over FACT,DEV: 工厂阶段
+    FACT->>DEV: [1] 扫码序列号, 设备上电
+    DEV-->>FACT: 芯片序列号 + 公钥指纹
+    FACT->>FACT: [2] 验证芯片身份
+    FACT->>DEV: [3] InitHsm() → 初始化芯片
+    FACT->>DEV: [4] ConfigSSLWithHsm() → TLS 握手测试
+    DEV-->>FACT: TLS 握手成功
+    FACT->>FACT: [5] KMS 注册 {序列号, 公钥指纹}
+    FACT->>DEV: [6] 断电, 取走设备
+</div>
+
+<p>与 OP-TEE 方案的关键区别：密钥在芯片封测阶段烧录，工厂灌装仅做身份验证和功能测试。单台耗时约 5-8 秒。</p>
+
+<h3>4.2 证书体系</h3>
+
+<div class="mermaid">
+flowchart LR
+    ROOT["Root CA<br/>kCA (芯片内)"]
+    SUB_CA["Sub CA<br/>kSubCert (芯片内)"]
+    DEV_CERT["Device Cert<br/>kDevicePrivateRsaCert<br/>(芯片内)"]
+    BROKER_CERT["Broker Cert<br/>(KMS 签发)"]
+
+    ROOT -->|"签发"| SUB_CA -->|"签发"| DEV_CERT
+    ROOT -->|"签发"| BROKER_CERT
+</div>
+
+<p>设备自带 Root CA → Sub CA → Device Cert 的完整信任链。Broker 证书由同一 Root CA 签发，设备侧验证 Broker 时只需信任 kCA 即可。</p>
+
+<h3>4.3 安全约束</h3>
+
+<table>
+<tr><th style="width:20%">约束</th><th>措施</th></tr>
+<tr><td>密钥烧录</td><td>在芯片封测厂的洁净室环境完成，离线操作</td></tr>
+<tr><td>芯片身份</td><td>每颗芯片有唯一序列号，KMS 中登记</td></tr>
+<tr><td>物理安全</td><td>安全芯片自带防篡改保护，开盖自毁密钥</td></tr>
+<tr><td>导出限制</td><td>HSM ENGINE 设计上禁止导出明文私钥</td></tr>
+<tr><td>审计日志</td><td>芯片初始化 + 功能验证记录写入工厂 MES</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 5 -->
+<!-- ================================================================ -->
+<h2 id="ch5">第五章：开发集成</h2>
+
+<h3>5.1 SDK 组成</h3>
+
+<table>
+<tr><th style="width:18%">组件</th><th style="width:28%">文件</th><th>用途</th></tr>
+<tr><td>交付库</td><td><code>libtbox_delivery.so</code></td><td>InitHsm + ConfigSSLWithHsm + 证书读取</td></tr>
+<tr><td>公共库</td><td><code>librouter_common.so</code></td><td>delivery 库的直接依赖，随 SDK 分发</td></tr>
+<tr><td>HSM 中间件</td><td><code>libnlsafe.so</code><br/><code>libhedsdk_ciu98b.so</code></td><td>芯片驱动，设备镜像预装</td></tr>
+<tr><td>paho (补丁版)</td><td><code>libpaho-mqtt3cs.so</code></td><td>带 SSLSocket_setExternalConfigCallback 补丁</td></tr>
+<tr><td>头文件</td><td><code>tbox/UtlForHsm.h</code><br/><code>paho/SSLSocket.h</code></td><td>InitHsm / ConfigSSLWithHsm / 回调声明</td></tr>
+</table>
+
+<h3>5.2 HTTPS 集成</h3>
+
+<div class="mermaid">
+flowchart LR
+    APP5["Application"] -->|"SSL_CTX"| CFG["ConfigSSLWithHsm(ctx)"]
+    CFG -->|"SSL_CTX_use_PrivateKey"| ENG["HSM ENGINE<br/>(芯片内)"]
+    ENG -->|"m^d mod n"| CHIP5["CIU98B"]
+    subgraph REE5["REE"]
+        APP5
+        CFG
+    end
+    subgraph HSM5["安全芯片"]
+        ENG
+        CHIP5
+    end
+</div>
+
+<pre><code>InitHsm();
+SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
+ConfigSSLWithHsm(ctx);
+SSL_CTX_use_certificate_file(ctx, "device.crt", SSL_FILETYPE_PEM);
+// TLS 握手 — 私钥操作在芯片内完成</code></pre>
+
+<h3>5.3 MQTTS 集成</h3>
+
+<div class="mermaid">
+flowchart LR
+    APP6["mqtts_pub/mqtts_sub"]
+    PAHO6["paho.mqtt.c<br/>(patched)"]
+    CB6["ConfigSSLWithHsm<br/>(callback)"]
+    DELIV6["libtbox_delivery.so"]
+    CHIP6["CIU98B 芯片"]
+
+    APP6 -->|"setExternalConfigCallback"| PAHO6
+    PAHO6 -->|"privateKey=__EXTERNAL_CONFIG__"| CB6
+    CB6 --> DELIV6 --> CHIP6
+</div>
+
+<pre><code>InitHsm();
+SSLSocket_setExternalConfigCallback(ConfigSSLWithHsm);
+
+MQTTClient_create(&client, "ssl://broker:8883", "tbox-device", ...);
+ssl_opts.privateKey = "__EXTERNAL_CONFIG__";   // 触发回调
+MQTTClient_connect(client, &conn_opts);         // paho 调 ConfigSSLWithHsm
+MQTTClient_publishMessage(client, topic, &msg, &token);</code></pre>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 6 -->
+<!-- ================================================================ -->
+<h2 id="ch6">第六章：运维与恢复</h2>
+
+<h3>6.1 密钥生命周期</h3>
+
+<div class="mermaid">
+stateDiagram-v2
+    BURN: 芯片烧录<br/>(封测厂)
+    INIT: 设备初始化<br/>(工厂)
+    ACTIVE: 运营中
+    REVOKED: 已吊销<br/>(KMS)
+    DESTROYED: 物理销毁
+
+    [*] --> BURN: 生成密钥 + 签发证书
+    BURN --> INIT: 设备组装
+    INIT --> ACTIVE: 功能验证通过
+    ACTIVE --> REVOKED: 证书吊销
+    REVOKED --> DESTROYED: 芯片报废
+    DESTROYED --> [*]
+</div>
+
+<p>与 OP-TEE 方案的关键区别：密钥不可在设备端生成或删除，更新只能通过更换芯片或 OTA 更新证书（不换密钥）。</p>
+
+<h3>6.2 故障排查</h3>
+
+<table>
+<tr><th>现象</th><th>检查点</th></tr>
+<tr><td><code>InitHsm</code> 返回 -1</td><td>芯片驱动是否加载 (<code>lsmod | grep hed</code>)，SPI/I2C 是否工作</td></tr>
+<tr><td><code>ConfigSSLWithHsm</code> 返回非 0</td><td>芯片内证书槽位是否为空（生产烧录异常）</td></tr>
+<tr><td>TLS 握手 "certificate verify failed"</td><td>Broker 证书是否由芯片内 kCA 签发，时钟是否同步</td></tr>
+<tr><td>paho 回调未触发</td><td><code>privateKey</code> 是否为精确字符串 <code>"__EXTERNAL_CONFIG__"</code></td></tr>
+<tr><td>paho 走文件路径</td><td><code>trustStore</code>/<code>keyStore</code> 不能与 <code>__EXTERNAL_CONFIG__</code> 混用</td></tr>
+</table>
+
+<h3>6.3 设备退役</h3>
+<ol>
+<li>云端 KMS 吊销设备证书 → CRL/OCSP 生效</li>
+<li>安全芯片无需额外操作（私钥永不出芯片，物理报废即销毁）</li>
+<li>审计日志记录吊销操作</li>
+</ol>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- CHAPTER 7 -->
+<!-- ================================================================ -->
+<h2 id="ch7">第七章：安全与合规</h2>
+
+<h3>7.1 威胁模型</h3>
+
+<table>
+<tr><th style="width:22%">威胁</th><th style="width:22%">攻击面</th><th>防护</th></tr>
+<tr><td>提取私钥</td><td>总线嗅探 (SPI/I2C)</td><td>芯片通信加密 + 私钥不出芯片</td></tr>
+<tr><td>物理拆解</td><td>芯片开盖</td><td>防篡改自毁电路</td></tr>
+<tr><td>侧信道</td><td>功耗/电磁分析</td><td>芯片硬件侧信道防护</td></tr>
+<tr><td>替换芯片</td><td>更换安全芯片</td><td>芯片序列号 + KMS 白名单</td></tr>
+<tr><td>重放攻击</td><td>重放总线命令</td><td>芯片内部计数器防重放</td></tr>
+</table>
+
+<h3>7.2 法规对齐</h3>
+
+<table>
+<tr><th style="width:22%">法规</th><th style="width:30%">要求</th><th>实现</th></tr>
+<tr><td>ISO 21434</td><td>道路车辆网络安全</td><td>TARA 分析 + 安全芯片硬件信任根</td></tr>
+<tr><td>WP.29 UN R155</td><td>车辆网络安全认证</td><td>OTA 证书更新 + 安全事件响应</td></tr>
+<tr><td>国密 GM/T 0028</td><td>密码模块安全</td><td>CIU98B 通过国密二级认证</td></tr>
+<tr><td>Common Criteria</td><td>安全芯片评估</td><td>EAL5+ 认证芯片</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ================================================================ -->
+<!-- APPENDIX -->
+<!-- ================================================================ -->
+<h2 id="appendix">附录：技术指标与术语</h2>
+
+<h3>A.1 技术指标</h3>
+
+<table>
+<tr><th style="width:38%">指标</th><th>值</th></tr>
+<tr><td>RSA-2048 签名延迟</td><td>&lt; 100 ms（芯片内运算）</td></tr>
+<tr><td>安全存储容量</td><td>8 个证书/密钥槽位</td></tr>
+<tr><td>通信接口</td><td>SPI (最高 10 Mbps)</td></tr>
+<tr><td>工作温度</td><td>-40°C ~ +105°C</td></tr>
+<tr><td>安全认证</td><td>国密二级 / CC EAL5+</td></tr>
+<tr><td>防篡改</td><td>主动屏蔽层 + 电压/温度/频率异常检测</td></tr>
+</table>
+
+<h3>A.2 术语表</h3>
+
+<table>
+<tr><th style="width:18%">术语</th><th>说明</th></tr>
+<tr><td>HSM</td><td>Hardware Security Module，硬件安全模块（此处指独立安全芯片）</td></tr>
+<tr><td>CIU98B</td><td>华大半导体安全芯片型号</td></tr>
+<tr><td>libtbox_delivery.so</td><td>T-Box 交付库，封装 HSM 初始化 + 凭据注入</td></tr>
+<tr><td>ConfigSSLWithHsm</td><td>将芯片内证书/私钥/CA 链注入 SSL_CTX 的函数</td></tr>
+<tr><td>InitHsm</td><td>初始化安全芯片 + 加载 HSM ENGINE</td></tr>
+<tr><td>kCA / kSubCert</td><td>芯片内 Root CA 和 Sub CA 证书槽位名</td></tr>
+<tr><td>kDevicePrivateRsaKey</td><td>芯片内设备 RSA 私钥槽位名</td></tr>
+<tr><td>__EXTERNAL_CONFIG__</td><td>paho 补丁中触发外部回调的标记字符串</td></tr>
+<tr><td>SSLSocket_setExternalConfigCallback</td><td>paho 补丁新增的回调注册函数</td></tr>
+</table>
+
+<h3>A.3 与 OP-TEE 方案的对比</h3>
+
+<table>
+<tr><th style="width:25%">维度</th><th style="width:37%">HSM 安全芯片（本文档）</th><th>OP-TEE TA（21-product-manual）</th></tr>
+<tr><td>安全硬件</td><td>独立安全芯片 (CIU98B)</td><td>ARM TrustZone + OP-TEE</td></tr>
+<tr><td>密钥来源</td><td>芯片出厂烧录，不可更改</td><td>TEE 内 TEE_GenerateKey 生成</td></tr>
+<tr><td>ENGINE</td><td>芯片厂商 HSM ENGINE</td><td>自研 e_tbox_keystore ENGINE</td></tr>
+<tr><td>灌装方式</td><td>封测厂烧录 + 工厂验证</td><td>工厂工控机在线灌装</td></tr>
+<tr><td>密钥轮换</td><td>不可（需更换芯片或 OTA 证书）</td><td>支持（unlock 后可 gen/delete）</td></tr>
+<tr><td>并发</td><td>芯片内部串行化</td><td>OP-TEE 3.2 有限制，需 keyd 方案</td></tr>
+<tr><td>物理防篡改</td><td>✅ 芯片硬件级</td><td>⚠️ 依赖 SoC（TrustZone 无物理防护）</td></tr>
+<tr><td>证书体系</td><td>Root → Sub → Device (CA 链)</td><td>Root CA → 各设备证书 (CA 链)</td></tr>
+</table>
+
+<h3>A.4 相关技术文档</h3>
+
+<ul class="ref-list">
+<li><a href="19-hsm-chip-reference-architecture.md">19-hsm-chip-reference-architecture.md</a> — 他人 HSM 架构参考</li>
+<li><a href="21-product-manual.md">21-product-manual.md</a> — OP-TEE 版产品说明书</li>
+<li><a href="18-mqtt-mutual-auth-demo.md">18-mqtt-mutual-auth-demo.md</a> — MQTT 双向认证方案</li>
+</ul>
+
+<div class="footer">
+TBox 安全服务产品说明书 v1.0 (安全芯片版) &nbsp;|&nbsp; 机密 &nbsp;|&nbsp; 2026-07-22
+</div>
+
+</body>
+</html>
