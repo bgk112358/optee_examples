@@ -127,3 +127,20 @@ cp tbox_keystore /usr/bin/
 - [ta/README.md](../ta/README.md) — TA 实现
 - [engine/README.md](../engine/README.md) — ENGINE 实现
 - [ta/include/tbox_keystore_ta.h](../ta/include/tbox_keystore_ta.h) — UUID + 命令 ID 定义
+
+## AG519M 编译环境
+
+- [编译器] 在 /opt/ql-ol-crosstool/ql-ol-crosstool-env-init 环境里，设置的是32位的交叉编译环境，需要新开窗口单独设置，不能设置 ql-ol-crosstool-env-init，如果设置了会报错，临时可以用 make LDFLAGS="-O1" 编译
+```bash
+$ export PATH=/opt/ql-ol-crosstool/sysroots/x86_64-oesdk-linux/usr/bin/aarch64-poky-linux:$PATH
+$ export CROSS_COMPILE=aarch64-poky-linux-
+$ export TA_DEV_KIT_DIR=/opt/ql-ol-crosstool/sysroots/cortexa7hf-neon-vfpv4-poky-linux-gnueabi/usr/include/optee/export-user_ta/
+```
+
+- [编译] 设置 ql-ol-crosstool-env-init 的前提下，会报错 from Crypto.Signature import PKCS1_v1_5； ImportError: No module named 'Crypto'；是因为交叉环境里的 python3 没有 Crypto 模块，可以通过一些方法
+解决模块依赖问题，本地按照好模块后，兼容版本前提下，拷贝 'Crypto' 模块到交叉工具链里
+```bash
+$ sudo cp -r /home/ubuntu/.local/lib/python3.10/site-packages/ /opt/ql-ol-crosstool/sysroots/x86_64-oesdk-linux/usr/lib/python3.5/site-packages/Crypto/
+$ sudo cp -r /home/ubuntu/.local/lib/python3.10/site-packages/pycryptodome-3.23.0.dist-info/ /opt/ql-ol-crosstool/sysroots/x86_64-oesdk-linux/usr/lib/python3.5/site-packages/
+```
+- [编译] 无须设置 ql-ol-crosstool-env-init ，直接make即可

@@ -4,8 +4,8 @@ project (optee_examples C)
 # https://cmake.org/Wiki/CMake_Useful_Variables
 set (CMAKE_TOOLCHAIN_FILE CMakeToolchain.txt)
 
-include_directories(/home/test0923/workspace/optee400/optee_client/export-ca_arm64/include)
-link_directories(/home/test0923/workspace/optee400/optee_client/export-ca_arm64/lib)
+# include_directories(/home/test0923/workspace/optee400/optee_client/export-ca_arm64/include)
+# link_directories(/home/test0923/workspace/optee400/optee_client/export-ca_arm64/lib)
 
 include(GNUInstallDirs)
 

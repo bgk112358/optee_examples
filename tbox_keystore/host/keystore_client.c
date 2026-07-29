@@ -33,7 +33,7 @@
 #include "tbox_keystore_ta.h"
 
 /* GP TEE / OP-TEE error code for "object already exists" */
-#define TEEC_ERROR_ACCESS_CONFLICT  0xffff0003
+// #define TEEC_ERROR_ACCESS_CONFLICT  0xffff0003
 
 /* ---- Hex utility ---- */
 

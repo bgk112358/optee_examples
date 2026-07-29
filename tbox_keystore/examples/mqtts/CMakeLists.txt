@@ -3,11 +3,11 @@ project(tbox_mqtts C)
 
 find_package(OpenSSL 1.1 REQUIRED)
 
-set(TEEC_INCLUDE_DIR "/home/test0923/workspace/optee400/optee_client/export-ca_arm64/include"
-    CACHE PATH "TEE Client API headers")
+# set(TEEC_INCLUDE_DIR "/home/test0923/workspace/optee400/optee_client/export-ca_arm64/include"
+#    CACHE PATH "TEE Client API headers")
 
 # ---- paho (patched, installed from three_part/mqtt) ----
-set(PAHO_DIR "/home/test0923/workspace/three_part/mqtt/out"
+set(PAHO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../three_part/mqtt/out"
     CACHE PATH "paho.mqtt.c install prefix")
 
 # ---- tbox_keystore ENGINE (built from ../engine) ----
