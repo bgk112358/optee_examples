@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>TBox 安全服务系统架构图</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  @media screen { body { max-width: 280mm; margin: 0 auto; padding: 20px 0; } }
+  body { font-family: "Noto Sans SC","Source Han Sans CN","Microsoft YaHei",sans-serif; background:#fff; }
+  h2 { text-align:center; font-size:16pt; margin:0 0 4px 0; }
+  .sub { text-align:center; font-size:10pt; color:#666; margin-bottom:16px; }
+  .mermaid { text-align:center; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'neutral',flowchart:{useMaxWidth:true,htmlLabels:true,nodeSpacing:30,rankSpacing:40},securityLevel:'loose'});</script>
+</head>
+<body>
+
+<h2>TBox 安全服务系统架构</h2>
+<div class="sub">ARM TrustZone + OP-TEE &nbsp;|&nbsp; OpenSSL 标准接口 &nbsp;|&nbsp; HTTPS &amp; MQTTS 双向认证</div>
+
+<div class="mermaid">
+flowchart TB
+    subgraph S["业务场景"]
+        direction LR
+        A1["<b>产线灌装</b><br/>USB 直连工控机<br/>灌装 PIN + 生成密钥<br/>签发设备证书 + 锁定"]
+        A2["<b>OTA 固件升级</b><br/>TLS 双向认证下载<br/>验签 + 解密后刷写"]
+        A3["<b>MQTTS 数据通信</b><br/>上报订单 / 接收指令<br/>发布 + 订阅双通道"]
+    end
+
+    subgraph R["普通世界 (Linux 用户态)"]
+        direction TB
+        B1["<b>OpenSSL 引擎模块</b><br/>注册为 'tbox_keystore' 引擎<br/>拦截 RSA 签名/验签/解密<br/>转发到安全世界执行"]
+        B2["OpenSSL 1.1.x 运行库<br/>MQTT 客户端库 (paho)<br/>TEE 客户端通信库"]
+    end
+
+    subgraph T["安全世界 (OP-TEE)"]
+        direction TB
+        C1["<b>密钥管理可信应用</b><br/>处理 12 条命令<br/>密钥生成/存储/加载/删除<br/>密码学运算 (RSA/AES)"]
+        C2["<b>安全存储</b><br/>硬件唯一密钥派生<br/>每文件独立加密<br/>防篡改 + 防回滚"]
+        C3["<b>访问控制</b><br/>灌装 PIN 认证<br/>Lock 写保护<br/>每密钥独立权限位"]
+    end
+
+    subgraph H["硬件信任根"]
+        direction LR
+        D1["芯片 eFuse<br/>硬件唯一密钥"]
+        D2["安全启动链<br/>逐级验签"]
+        D3["eMMC 安全分区<br/>硬件防回滚"]
+    end
+
+    S -->|"标准 OpenSSL 接口调用"| B1
+    B1 -->|"驱动通信"| B2
+    B2 -->|"安全监控调用切换到安全世界"| T
+    C1 -->|"读写"| C2
+    C1 -->|"校验"| C3
+    H -->|"提供信任根"| T
+
+    style S fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px
+    style R fill:#fef3c7,stroke:#d97706,stroke-width:2px
+    style T fill:#d1fae5,stroke:#059669,stroke-width:2px
+    style H fill:#fce7f3,stroke:#db2777,stroke-width:2px
+    style A1 fill:#eff6ff,stroke:#3b82f6
+    style A2 fill:#eff6ff,stroke:#3b82f6
+    style A3 fill:#eff6ff,stroke:#3b82f6
+    style B1 fill:#fffbeb,stroke:#f59e0b
+    style B2 fill:#fffbeb,stroke:#f59e0b
+    style C1 fill:#ecfdf5,stroke:#10b981
+    style C2 fill:#ecfdf5,stroke:#10b981
+    style C3 fill:#ecfdf5,stroke:#10b981
+    style D1 fill:#fdf2f8,stroke:#ec4899
+    style D2 fill:#fdf2f8,stroke:#ec4899
+    style D3 fill:#fdf2f8,stroke:#ec4899
+</div>
+
+</body>
+</html>
