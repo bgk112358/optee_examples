@@ -93,7 +93,7 @@ make -j
 ```bash
 # 1. 灌装密钥
 rm -rf /data/tee/*
-./test/setup_keys.sh
+./scrypt/setup_keys.sh
 
 # 2. 生成证书
 ./tls_mutual_auth --gen-certs

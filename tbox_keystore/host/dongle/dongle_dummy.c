@@ -70,7 +70,7 @@ static int dummy_open(struct dongle_ctx **ctx_out)
 	FILE *fp;
 	EVP_PKEY *pkey = NULL;
 	const EC_KEY *ec;
-	const BIGNUM *privkey;
+	const EC_GROUP *grp;
 
 	path = key_path();
 	if (!path) {
@@ -99,8 +99,8 @@ static int dummy_open(struct dongle_ctx **ctx_out)
 		return -1;
 	}
 
-	privkey = EC_KEY_get0_private_key(ec);
-	if (!privkey || BN_num_bits(privkey) != 256) {
+	grp = EC_KEY_get0_group(ec);
+	if (!grp || EC_GROUP_get_curve_name(grp) != NID_X9_62_prime256v1) {
 		fprintf(stderr, "[dummy] Key is not P-256\n");
 		EVP_PKEY_free(pkey);
 		return -1;

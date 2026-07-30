@@ -67,7 +67,8 @@ make -j
 ```bash
 # 1. 确保 TA + ENGINE 已部署
 # 2. 确保密钥已灌装
-tbox_keystore --info server-key
+./scrypt/setup_keys.sh
+./tbox_keystore --info server-key
 
 # 3. 运行
 ./engine_test server-key

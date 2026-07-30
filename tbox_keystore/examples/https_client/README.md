@@ -88,9 +88,7 @@ make -j
 
 ```bash
 # 1. 灌装 TA 密钥 + 生成客户端证书
-cd ../tls_mutual_auth
-./test/setup_keys.sh
-./tls_mutual_auth --gen-certs
+./scrypt/setup_keys.sh
 
 # 2. 生成服务端软件证书
 cd ../https_client
@@ -103,6 +101,19 @@ openssl s_server -cert /tmp/server-sw.crt -key /tmp/server-sw.key \
 
 # 4. 运行客户端
 ./https_client
+```
+
+## 设备端测试(简化)
+
+```bash
+# 1. 灌装 TA 密钥 + 生成客户端证书
+./scrypt/setup_keys.sh
+
+# 2. 生成服务端软件证书
+./gen_sw_cert.sh
+
+# 3. 启动 s_server（软件密钥）,运行客户端
+./https_test.sh
 ```
 
 ## 预期输出
