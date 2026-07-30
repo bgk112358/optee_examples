@@ -57,15 +57,12 @@ TEE_Result so_provision_dongle(const uint8_t *pubkey_der, size_t der_len);
 TEE_Result so_unlock_req(const uint8_t *pin, size_t pin_len,
 			 uint8_t *chg_out, size_t chg_out_size,
 			 uint32_t *dongle_count, uint32_t *cooldown_left);
-TEE_Result so_unlock_verify(const uint8_t *pubkey_der, size_t der_len,
-			    const uint8_t *sig_der, size_t sig_len,
-			    uint32_t dongle_index,
-			    const uint8_t *challenge);
 void       so_pin_lock(void);
 void       so_pin_auto_lock(void);
 int        so_pin_is_unlocked(void);
 void       so_pin_get_info(struct so_status *st);
 void       so_pin_restore(void);
+void       so_unlock_confirm(void);
 
 /* Session-level challenge state for two-phase unlock */
 static uint8_t g_so_challenge[32];
@@ -244,7 +241,6 @@ static TEE_Result cmd_verify(uint32_t pt,
 out:
 	if (key != TEE_HANDLE_NULL)
 		TEE_FreeTransientObject(key);
-	/* Always return SUCCESS; result is in params[3].value.a */
 	return TEE_SUCCESS;
 }
 
@@ -351,7 +347,6 @@ static TEE_Result cmd_get_info(uint32_t pt,
 	return res;
 }
 
-
 static TEE_Result cmd_rsa_decrypt(uint32_t pt,
 				  TEE_Param params[TEE_NUM_PARAMS])
 {
@@ -389,6 +384,7 @@ out:
 		TEE_FreeTransientObject(key);
 	return res;
 }
+
 static TEE_Result cmd_provision_lock(uint32_t pt,
 				     TEE_Param params[TEE_NUM_PARAMS])
 {
@@ -457,7 +453,6 @@ static TEE_Result cmd_so_unlock_req(uint32_t pt,
 	if (pt != exp_pt || !params[0].memref.buffer || !params[1].memref.buffer)
 		return TEE_ERROR_BAD_PARAMETERS;
 
-	/* Invalidate previous challenge */
 	g_so_challenge_valid = 0;
 
 	res = so_unlock_req(params[0].memref.buffer,
@@ -466,47 +461,16 @@ static TEE_Result cmd_so_unlock_req(uint32_t pt,
 			    params[1].memref.size,
 			    &dongle_count, &cooldown_left);
 
-	/* Update output params regardless of result */
 	params[2].value.a = dongle_count;
 	params[2].value.b = cooldown_left;
 
 	if (res == TEE_SUCCESS) {
-		/* Store challenge for Phase 2 */
 		memcpy(g_so_challenge, params[1].memref.buffer, 32);
 		g_so_challenge_valid = 1;
 		params[1].memref.size = 36 + dongle_count * 36;
 	}
 
 	return res;
-}
-
-static TEE_Result cmd_so_unlock_verify(uint32_t pt,
-				       TEE_Param params[TEE_NUM_PARAMS])
-{
-	const uint32_t exp_pt = TEE_PARAM_TYPES(
-		TEE_PARAM_TYPE_MEMREF_INPUT,
-		TEE_PARAM_TYPE_MEMREF_INPUT,
-		TEE_PARAM_TYPE_VALUE_INPUT,
-		TEE_PARAM_TYPE_NONE);
-
-	if (pt != exp_pt || !params[0].memref.buffer || !params[1].memref.buffer)
-		return TEE_ERROR_BAD_PARAMETERS;
-
-	/* Phase 2 requires a valid challenge from Phase 1 */
-	if (!g_so_challenge_valid) {
-		EMSG("SO unlock verify: no valid challenge (call CMD_SO_UNLOCK_REQ first)");
-		return TEE_ERROR_BAD_STATE;
-	}
-
-	/* Invalidate challenge after use (one-shot) */
-	g_so_challenge_valid = 0;
-
-	return so_unlock_verify(params[0].memref.buffer,
-				params[0].memref.size,
-				params[1].memref.buffer,
-				params[1].memref.size,
-				params[2].value.a,
-				g_so_challenge);
 }
 
 static TEE_Result cmd_so_lock(uint32_t pt,
@@ -524,6 +488,30 @@ static TEE_Result cmd_so_lock(uint32_t pt,
 		return TEE_ERROR_BAD_PARAMETERS;
 
 	so_pin_lock();
+	return TEE_SUCCESS;
+}
+
+static TEE_Result cmd_so_unlock_confirm(uint32_t pt,
+					TEE_Param params[TEE_NUM_PARAMS])
+{
+	const uint32_t exp_pt = TEE_PARAM_TYPES(
+		TEE_PARAM_TYPE_NONE,
+		TEE_PARAM_TYPE_NONE,
+		TEE_PARAM_TYPE_NONE,
+		TEE_PARAM_TYPE_NONE);
+
+	(void)params;
+
+	if (pt != exp_pt)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	if (!g_so_challenge_valid) {
+		EMSG("SO unlock confirm: no prior CMD_SO_UNLOCK_REQ");
+		return TEE_ERROR_BAD_STATE;
+	}
+
+	g_so_challenge_valid = 0;
+	so_unlock_confirm();
 	return TEE_SUCCESS;
 }
 
@@ -559,9 +547,9 @@ static int cmd_is_so(uint32_t cmd_id)
 	case CMD_SO_PIN_INIT:
 	case CMD_PROVISION_DONGLE:
 	case CMD_SO_UNLOCK_REQ:
-	case CMD_SO_UNLOCK_VERIFY:
 	case CMD_SO_LOCK:
 	case CMD_SO_GET_INFO:
+	case CMD_SO_UNLOCK_CONFIRM:
 		return 1;
 	default:
 		return 0;
@@ -570,16 +558,12 @@ static int cmd_is_so(uint32_t cmd_id)
 
 static int cmd_needs_pin(uint32_t cmd_id)
 {
-	/* SO commands carry their own SO-PIN for verification */
 	if (cmd_is_so(cmd_id))
 		return 0;
 
 	switch (cmd_id) {
 	case CMD_PIN_INIT:
-		/* PIN_INIT works only when not yet set */
-		return 0;
 	case CMD_PROVISION_LOCK:
-		/* Lock works whenever */
 		return 0;
 	default:
 		return 1;
@@ -622,12 +606,7 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
 	(void)params;
 	(void)sess_ctx;
 
-	/* Restore PIN/lock state from persistent storage.
-	 * g_pin_state is lost on TA restart, so check the secure
-	 * storage objects to see if PIN was already provisioned. */
 	pin_mgr_restore();
-
-	/* Restore SO-PIN/dongle/unlock state */
 	so_pin_restore();
 
 	return TEE_SUCCESS;
@@ -636,9 +615,14 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
 void TA_CloseSessionEntryPoint(void *sess_ctx)
 {
 	(void)sess_ctx;
-
-	/* Auto-lock if SO was unlocked */
-	so_pin_auto_lock();
+	/*
+	 * SO auto-lock is intentionally NOT called here.
+	 * UNLOCKED state persists across sessions until:
+	 *   - explicit CMD_SO_LOCK (--so-lock)
+	 *   - 5-minute idle timeout (not yet implemented)
+	 *   - TA restart
+	 *   - 1000 total SO-PIN failures (SO_BRICKED)
+	 */
 }
 
 TEE_Result TA_InvokeCommandEntryPoint(void *sess_ctx,
@@ -650,16 +634,14 @@ TEE_Result TA_InvokeCommandEntryPoint(void *sess_ctx,
 
 	(void)sess_ctx;
 
-	/* Gate 1: PIN check for operations that require it.
-	 * SO commands use their own SO-PIN verification. */
+	/* Gate 1: PIN check */
 	if (cmd_needs_pin(cmd_id)) {
 		res = pin_mgr_verify();
 		if (res != TEE_SUCCESS)
 			return res;
 	}
 
-	/* Gate 2: Prevent write operations after lock.
-	 * SO commands in PROVISIONED state or during UNLOCKED are exempt. */
+	/* Gate 2: Write protection */
 	if (cmd_needs_write(cmd_id) && pin_mgr_is_locked() &&
 	    !so_pin_is_unlocked()) {
 		EMSG("TA is locked, write operation denied");
@@ -699,12 +681,12 @@ TEE_Result TA_InvokeCommandEntryPoint(void *sess_ctx,
 		return cmd_provision_dongle(param_types, params);
 	case CMD_SO_UNLOCK_REQ:
 		return cmd_so_unlock_req(param_types, params);
-	case CMD_SO_UNLOCK_VERIFY:
-		return cmd_so_unlock_verify(param_types, params);
 	case CMD_SO_LOCK:
 		return cmd_so_lock(param_types, params);
 	case CMD_SO_GET_INFO:
 		return cmd_so_get_info(param_types, params);
+	case CMD_SO_UNLOCK_CONFIRM:
+		return cmd_so_unlock_confirm(param_types, params);
 
 	default:
 		EMSG("Unsupported command ID: 0x%x", (unsigned int)cmd_id);

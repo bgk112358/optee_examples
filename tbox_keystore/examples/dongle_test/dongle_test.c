@@ -73,6 +73,7 @@ static void gen_key(void)
 static void del_key(void)
 {
 	remove(TMP_KEY);
+	remove("/tmp/dummy-dongle-key.pem");
 }
 
 /* ---- Helper: verify ECDSA signature with OpenSSL (1.1.x and 3.x compat) ---- */

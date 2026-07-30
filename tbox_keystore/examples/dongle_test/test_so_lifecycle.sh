@@ -27,18 +27,20 @@ fail() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); exit 1; }
 info() { echo "--- $1 ---"; }
 
 check_ok() {
+    _desc="$1"; shift
     if "$@" >/dev/null 2>&1; then
-        ok "$*"
+        ok "$_desc"
     else
-        fail "$*"
+        fail "$_desc"
     fi
 }
 
 check_fail() {
+    _desc="$1"; shift
     if "$@" >/dev/null 2>&1; then
-        fail "$* (expected failure, got success)"
+        fail "$_desc (expected failure, got success)"
     else
-        ok "$* (expected failure)"
+        ok "$_desc (expected failure)"
     fi
 }
 
@@ -99,7 +101,7 @@ test_so_unlock() {
     ok "TA locked"
 
     # Write operations should fail after lock
-    check_fail $CLI --gen-rsa test-key --size 2048 "Write after lock"
+    check_fail "Write after lock" $CLI --gen-rsa test-key --size 2048
 
     # SO unlock
     $CLI --so-unlock --so-pin "$SO_PIN" --dongle dummy
@@ -127,7 +129,7 @@ test_so_relock() {
     echo "$out" | grep -q "LOCKED" && ok "SO state: LOCKED" || fail "SO state not LOCKED"
 
     # Write should fail again
-    check_fail $CLI --gen-rsa test-key2 --size 2048 "Write after SO re-lock"
+    check_fail "Write after SO re-lock" $CLI --gen-rsa test-key2 --size 2048
 }
 
 # ---- Phase D: Error paths ----
@@ -135,22 +137,22 @@ test_error_paths() {
     info "Error paths"
 
     # Wrong PIN
-    check_fail $CLI --so-unlock --so-pin "$WRONG_PIN" --dongle dummy "Wrong SO-PIN"
+    check_fail "Wrong SO-PIN" $CLI --so-unlock --so-pin "$WRONG_PIN" --dongle dummy
 
     out=$($CLI --so-info 2>/dev/null || true)
     echo "$out" | grep -q "1 consecutive" && ok "Consecutive failures: 1" || fail "Consecutive failures not 1"
 
     # Wrong PIN again
-    check_fail $CLI --so-unlock --so-pin "$WRONG_PIN" --dongle dummy "Wrong SO-PIN #2"
+    check_fail "Wrong SO-PIN #2" $CLI --so-unlock --so-pin "$WRONG_PIN" --dongle dummy
     # Wrong PIN #3 triggers cooldown
-    check_fail $CLI --so-unlock --so-pin "$WRONG_PIN" --dongle dummy "Wrong SO-PIN #3"
+    check_fail "Wrong SO-PIN #3" $CLI --so-unlock --so-pin "$WRONG_PIN" --dongle dummy
 
     out=$($CLI --so-info 2>/dev/null || true)
     echo "$out" | grep -q "Cooldown" && ok "Cooldown active" || fail "Cooldown not active"
 
     # Wrong dongle index
     # (skip if only 2 dongles — we expect failure for index 99 anyway)
-    check_fail $CLI --so-unlock --so-pin "$SO_PIN" --dongle dummy --dongle-index 99 "Invalid dongle index"
+    check_fail "Invalid dongle index" $CLI --so-unlock --so-pin "$SO_PIN" --dongle dummy --dongle-index 99
 }
 
 # ---- Phase E: Recover after cooldown ----
