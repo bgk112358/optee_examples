@@ -101,6 +101,47 @@
  */
 #define CMD_RSA_DECRYPT		11
 
+/* ---- SO (Security Officer) commands ---- */
+
+/*
+ * CMD_SO_PIN_INIT - Store SO-PIN (provisioning phase only)
+ * param[0] (memref) SHA-256(PIN) (32 bytes)
+ */
+#define CMD_SO_PIN_INIT		12
+
+/*
+ * CMD_PROVISION_DONGLE - Register authorised dongle public key
+ * param[0] (memref) P-256 public key DER
+ */
+#define CMD_PROVISION_DONGLE	13
+
+/*
+ * CMD_SO_UNLOCK_REQ - Request SO unlock challenge (Phase 1)
+ * param[0] (memref) SHA-256(SO-PIN) (32 bytes)
+ * param[1] (memref) output: challenge[32] + dongle_list[]
+ * param[2] (value)  a: dongle_count, b: cooldown_seconds_left
+ */
+#define CMD_SO_UNLOCK_REQ	14
+
+/*
+ * CMD_SO_UNLOCK_VERIFY - Submit signed challenge (Phase 2)
+ * param[0] (memref) P-256 public key DER
+ * param[1] (memref) ECDSA signature DER (64-72 bytes)
+ * param[2] (value)  a: dongle_index (0..7)
+ */
+#define CMD_SO_UNLOCK_VERIFY	15
+
+/*
+ * CMD_SO_LOCK - Explicitly re-lock TA (UNLOCKED → LOCKED)
+ */
+#define CMD_SO_LOCK		16
+
+/*
+ * CMD_SO_GET_INFO - Query SO state
+ * param[0] (memref) output: struct so_status
+ */
+#define CMD_SO_GET_INFO		17
+
 /* ---- Key type identifiers ---- */
 #define KEY_TYPE_RSA_KEYPAIR	1
 #define KEY_TYPE_AES		2
@@ -122,5 +163,43 @@ struct key_info {
 	uint32_t permissions;
 	uint8_t  label[KEY_LABEL_MAX];
 };
+
+/* ---- SO (Security Officer) shared structures ---- */
+
+/* Maximum number of authorised dongles per device */
+#define SO_DONGLE_MAX		8
+
+/* SO state enum (returned in so_status.state) */
+#define SO_STATE_UNSET		0
+#define SO_STATE_PROVISIONED	1
+#define SO_STATE_LOCKED		2
+#define SO_STATE_UNLOCKED	3
+#define SO_STATE_BRICKED	4
+
+/* Dongle entry stored in TA whitelist */
+struct so_dongle_entry {
+	uint8_t  pubkey_hash[32];   /* SHA-256(public key DER)           */
+	uint8_t  serial[4];        /* Dongle serial number (optional)    */
+};
+
+/* SO status returned by CMD_SO_GET_INFO */
+struct so_status {
+	uint32_t state;            /* SO_STATE_*                        */
+	uint32_t dongle_count;     /* Number of registered dongles      */
+	uint32_t fail_total;       /* Total SO-PIN failures (0..1000)   */
+	uint32_t fail_consecutive; /* Consecutive failures (0..3)       */
+	uint32_t cooldown_left;    /* Cooldown seconds remaining        */
+	uint32_t reserved[3];      /* Reserved for future use           */
+};
+
+/* Output buffer format for CMD_SO_UNLOCK_REQ param[1]:
+ *   [0..31]    challenge (32 bytes, TEE_GenerateRandom)
+ *   [32..35]   dongle_count (uint32_t, little-endian)
+ *   [36..67]   dongle[0].pubkey_hash (32 bytes)
+ *   [68..71]   dongle[0].serial (4 bytes)
+ *   [72..103]  dongle[1].pubkey_hash
+ *   ... (repeats for each registered dongle)
+ */
+#define SO_CHG_BUF_SIZE     (32 + 4 + SO_DONGLE_MAX * 36)
 
 #endif /* __TBOX_KEYSTORE_TA_H__ */

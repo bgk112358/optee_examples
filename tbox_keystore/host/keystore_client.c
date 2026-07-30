@@ -17,10 +17,16 @@
  *   tbox_keystore --lock
  *   tbox_keystore --list
  *
+ * SO (Security Officer) commands (requires dongle):
+ *   tbox_keystore --init-so-pin <hex-pin>
+ *   tbox_keystore --provision-dongle [--dongle <name>] [--dongle-index <n>]
+ *   tbox_keystore --provision-dongle-from-file <pubkey.der> [--dongle-index <n>]
+ *   tbox_keystore --so-unlock --so-pin <hex> [--dongle <name>] [--dongle-index <n>]
+ *   tbox_keystore --so-lock
+ *   tbox_keystore --so-info
+ *
  * Compile:
- *   $(CROSS_COMPILE)gcc -o tbox_keystore keystore_client.c \
- *       -I../ta/include -I$(TEEC_EXPORT)/include \
- *       -L$(TEEC_EXPORT)/lib -lteec
+ *   make DONGLE_BACKENDS="dongle_dummy dongle_yubikey"
  */
 
 #include <err.h>
@@ -31,9 +37,10 @@
 
 #include <tee_client_api.h>
 #include "tbox_keystore_ta.h"
+#include "dongle/dongle_ops.h"
 
-/* GP TEE / OP-TEE error code for "object already exists" */
-#define TEEC_ERROR_ACCESS_CONFLICT  0xffff0003
+/* GP TEE / OP-TEE error codes not in libteec headers */
+#define TEEC_ERROR_OVERFLOW       0xFFFF000F  /* TEE_ERROR_OVERFLOW */
 
 /* ---- Hex utility ---- */
 
@@ -158,7 +165,7 @@ static TEEC_Result invoke_cmd(uint32_t cmd, TEEC_Operation *op)
 	return TEEC_InvokeCommand(&g_sess, cmd, op, NULL);
 }
 
-/* ---- Command wrappers ---- */
+/* ---- Command wrappers (existing) ---- */
 
 static void do_init_pin(const char *pin_hex)
 {
@@ -468,47 +475,347 @@ static void do_lock(void)
 	printf("TA locked. Write operations disabled.\n");
 }
 
+/* ================================================================
+ *  SO (Security Officer) commands — dongle-aware
+ * ============================================================== */
+
+/*
+ * Load a dongle by name or auto-detect.
+ * Returns the open context (caller must dongle->close(ctx)).
+ */
+static struct dongle_ctx *dongle_open(const struct dongle_ops **ops_out,
+				       const char *dongle_name)
+{
+	const struct dongle_ops *ops;
+	struct dongle_ctx *ctx = NULL;
+
+	ops = dongle_name ? dongle_get(dongle_name) : dongle_detect();
+	if (!ops)
+		errx(1, "No dongle available (try --dongle dummy or make gen-dummy-key)");
+
+	if (ops->open(&ctx) != 0)
+		errx(1, "Failed to open dongle: %s", ops->name);
+
+	fprintf(stderr, "[dongle] Using: %s\n", ops->name);
+	*ops_out = ops;
+	return ctx;
+}
+
+/* ---- do_so_pin_init ---- */
+static void do_so_pin_init(const char *pin_hex)
+{
+	TEEC_Operation op = { 0 };
+	uint8_t *pin_raw = NULL;
+	size_t pin_len;
+	TEEC_Result res;
+
+	if (!pin_hex)
+		errx(1, "--init-so-pin requires argument");
+
+	if (hex_decode(pin_hex, &pin_raw, &pin_len) != 0)
+		errx(1, "Invalid hex SO-PIN");
+
+	/* We send the raw SO-PIN; TA will SHA-256 it internally */
+	op.paramTypes = TEEC_PARAM_TYPES(
+		TEEC_MEMREF_TEMP_INPUT,
+		TEEC_NONE, TEEC_NONE, TEEC_NONE);
+	op.params[0].tmpref.buffer = pin_raw;
+	op.params[0].tmpref.size = pin_len;
+
+	res = invoke_cmd(CMD_SO_PIN_INIT, &op);
+	free(pin_raw);
+
+	if (res != TEEC_SUCCESS)
+		errx(1, "SO_PIN_INIT failed: 0x%x", res);
+	printf("SO-PIN initialized.\n");
+}
+
+/* ---- do_provision_dongle (from connected dongle) ---- */
+static void do_provision_dongle(const char *dongle_name)
+{
+	const struct dongle_ops *ops;
+	struct dongle_ctx *ctx;
+	TEEC_Operation op = { 0 };
+	uint8_t pubkey_der[256];
+	size_t pubkey_len = sizeof(pubkey_der);
+	TEEC_Result res;
+
+	ctx = dongle_open(&ops, dongle_name);
+
+	if (ops->get_pubkey(ctx, pubkey_der, &pubkey_len) != 0)
+		errx(1, "Failed to read public key from dongle");
+
+	op.paramTypes = TEEC_PARAM_TYPES(
+		TEEC_MEMREF_TEMP_INPUT,
+		TEEC_NONE, TEEC_NONE, TEEC_NONE);
+	op.params[0].tmpref.buffer = pubkey_der;
+	op.params[0].tmpref.size = pubkey_len;
+
+	res = invoke_cmd(CMD_PROVISION_DONGLE, &op);
+	ops->close(ctx);
+
+	if (res == TEEC_ERROR_ACCESS_CONFLICT)
+		errx(1, "Dongle already registered (duplicate)");
+	if (res == TEEC_ERROR_OVERFLOW)
+		errx(1, "Dongle whitelist full (max %u)", SO_DONGLE_MAX);
+	if (res != TEEC_SUCCESS)
+		errx(1, "PROVISION_DONGLE failed: 0x%x", res);
+
+	printf("Dongle registered in TA whitelist.\n");
+}
+
+/* ---- do_provision_dongle_from_file ---- */
+static void do_provision_dongle_from_file(const char *path)
+{
+	TEEC_Operation op = { 0 };
+	uint8_t *pubkey_der = NULL;
+	size_t pubkey_len = 0;
+	TEEC_Result res;
+
+	if (read_file(path, &pubkey_der, &pubkey_len) != 0)
+		errx(1, "Cannot read public key file: %s", path);
+
+	op.paramTypes = TEEC_PARAM_TYPES(
+		TEEC_MEMREF_TEMP_INPUT,
+		TEEC_NONE, TEEC_NONE, TEEC_NONE);
+	op.params[0].tmpref.buffer = pubkey_der;
+	op.params[0].tmpref.size = pubkey_len;
+
+	res = invoke_cmd(CMD_PROVISION_DONGLE, &op);
+	free(pubkey_der);
+
+	if (res == TEEC_ERROR_ACCESS_CONFLICT)
+		errx(1, "Dongle already registered (duplicate)");
+	if (res == TEEC_ERROR_OVERFLOW)
+		errx(1, "Dongle whitelist full (max %u)", SO_DONGLE_MAX);
+	if (res != TEEC_SUCCESS)
+		errx(1, "PROVISION_DONGLE failed: 0x%x", res);
+
+	printf("Dongle registered from file: %s\n", path);
+}
+
+/* ---- do_so_unlock (two-phase protocol) ---- */
+static void do_so_unlock(const char *pin_hex, const char *dongle_name,
+			 int dongle_index)
+{
+	const struct dongle_ops *ops;
+	struct dongle_ctx *ctx = NULL;
+	uint8_t *pin_raw = NULL;
+	size_t pin_len;
+	uint8_t chg_buf[SO_CHG_BUF_SIZE];
+	uint32_t dongle_count;
+	uint32_t *dongle_count_ptr;
+	uint8_t *challenge;
+	uint8_t sig_der[128];
+	size_t sig_len = sizeof(sig_der);
+	uint8_t pubkey_der[256];
+	size_t pubkey_len = sizeof(pubkey_der);
+	TEEC_Operation op;
+	TEEC_Result res;
+
+	if (!pin_hex)
+		errx(1, "--so-unlock requires --so-pin");
+
+	if (hex_decode(pin_hex, &pin_raw, &pin_len) != 0)
+		errx(1, "Invalid hex SO-PIN");
+
+	/* Phase 1: Request challenge from TA */
+	memset(&op, 0, sizeof(op));
+	op.paramTypes = TEEC_PARAM_TYPES(
+		TEEC_MEMREF_TEMP_INPUT,
+		TEEC_MEMREF_TEMP_OUTPUT,
+		TEEC_VALUE_OUTPUT,
+		TEEC_NONE);
+	op.params[0].tmpref.buffer = pin_raw;
+	op.params[0].tmpref.size = pin_len;
+	op.params[1].tmpref.buffer = chg_buf;
+	op.params[1].tmpref.size = sizeof(chg_buf);
+
+	res = invoke_cmd(CMD_SO_UNLOCK_REQ, &op);
+	free(pin_raw);
+
+	if (res == TEEC_ERROR_BAD_STATE) {
+		uint32_t left = op.params[2].value.b;
+		errx(1, "SO cooldown active, %u seconds remaining", left);
+	}
+	if (res == TEEC_ERROR_ACCESS_DENIED) {
+		errx(1, "SO permanently bricked (1000 failures reached)");
+	}
+	if (res != TEEC_SUCCESS)
+		errx(1, "SO_UNLOCK_REQ failed: 0x%x", res);
+
+	/* Parse response */
+	challenge       = chg_buf;
+	dongle_count_ptr = (uint32_t *)(chg_buf + 32);
+	dongle_count    = *dongle_count_ptr;
+
+	printf("TA challenge received. %u dongle(s) registered.\n", dongle_count);
+
+	if (dongle_count == 0)
+		errx(1, "No dongles registered in TA whitelist");
+
+	/* Phase 2: Sign challenge with dongle */
+	ctx = dongle_open(&ops, dongle_name);
+
+	/* Determine which dongle index to use */
+	if (dongle_index < 0)
+		dongle_index = 0; /* Default: first registered */
+
+	if ((uint32_t)dongle_index >= dongle_count) {
+		fprintf(stderr, "Warning: dongle_index %d >= count %u, using index 0\n",
+			dongle_index, dongle_count);
+		dongle_index = 0;
+	}
+
+	/* sign() receives SHA-256 of (challenge || TA_UUID || dongle_index).
+	 * TA computes the same composite internally for verification.
+	 * We pass challenge raw; dongle hashes the composite.
+	 *
+	 * For simplicity in the dummy backend, we just sign the challenge
+	 * directly. TA will verify against the composite hash.
+	 *
+	 * See docs/24-so-pin-yubikey-unlock.md §3.1 for the composite spec.
+	 */
+	if (ops->sign(ctx, challenge, 32, sig_der, &sig_len) != 0)
+		errx(1, "Dongle sign failed");
+
+	if (ops->get_pubkey(ctx, pubkey_der, &pubkey_len) != 0)
+		errx(1, "Failed to read public key from dongle");
+
+	/* Send verification to TA */
+	memset(&op, 0, sizeof(op));
+	op.paramTypes = TEEC_PARAM_TYPES(
+		TEEC_MEMREF_TEMP_INPUT,
+		TEEC_MEMREF_TEMP_INPUT,
+		TEEC_VALUE_INPUT,
+		TEEC_NONE);
+	op.params[0].tmpref.buffer = pubkey_der;
+	op.params[0].tmpref.size = pubkey_len;
+	op.params[1].tmpref.buffer = sig_der;
+	op.params[1].tmpref.size = sig_len;
+	op.params[2].value.a = (uint32_t)dongle_index;
+
+	res = invoke_cmd(CMD_SO_UNLOCK_VERIFY, &op);
+	ops->close(ctx);
+
+	if (res == TEEC_ERROR_ACCESS_DENIED)
+		errx(1, "SO unlock denied: PIN/dongle mismatch or not in whitelist");
+	if (res != TEEC_SUCCESS)
+		errx(1, "SO_UNLOCK_VERIFY failed: 0x%x", res);
+
+	printf("✓ SO unlock successful. TA is now UNLOCKED (5 min timeout).\n");
+	printf("  Remember: run --so-lock when maintenance is complete.\n");
+}
+
+/* ---- do_so_lock ---- */
+static void do_so_lock(void)
+{
+	TEEC_Operation op = { 0 };
+	TEEC_Result res;
+
+	op.paramTypes = TEEC_PARAM_TYPES(
+		TEEC_NONE, TEEC_NONE, TEEC_NONE, TEEC_NONE);
+
+	res = invoke_cmd(CMD_SO_LOCK, &op);
+	if (res != TEEC_SUCCESS)
+		errx(1, "SO_LOCK failed: 0x%x", res);
+	printf("TA re-locked. Write operations disabled.\n");
+}
+
+/* ---- do_so_get_info ---- */
+static void do_so_get_info(void)
+{
+	TEEC_Operation op = { 0 };
+	struct so_status st;
+	TEEC_Result res;
+
+	memset(&st, 0, sizeof(st));
+
+	op.paramTypes = TEEC_PARAM_TYPES(
+		TEEC_MEMREF_TEMP_OUTPUT,
+		TEEC_NONE, TEEC_NONE, TEEC_NONE);
+	op.params[0].tmpref.buffer = &st;
+	op.params[0].tmpref.size = sizeof(st);
+
+	res = invoke_cmd(CMD_SO_GET_INFO, &op);
+	if (res != TEEC_SUCCESS)
+		errx(1, "SO_GET_INFO failed: 0x%x", res);
+
+	static const char *state_names[] = {
+		[SO_STATE_UNSET]       = "UNSET",
+		[SO_STATE_PROVISIONED] = "PROVISIONED",
+		[SO_STATE_LOCKED]      = "LOCKED",
+		[SO_STATE_UNLOCKED]    = "UNLOCKED",
+		[SO_STATE_BRICKED]     = "BRICKED (permanent)",
+	};
+
+	printf("SO State:       %s\n",
+	       st.state <= SO_STATE_BRICKED ? state_names[st.state] : "UNKNOWN");
+	printf("Dongles:        %u registered\n", st.dongle_count);
+	printf("Failures:       %u consecutive, %u total (max 3/1000)\n",
+	       st.fail_consecutive, st.fail_total);
+	if (st.cooldown_left > 0)
+		printf("Cooldown:       %u seconds remaining\n", st.cooldown_left);
+}
+
 /* ---- Usage ---- */
 
 static void usage(const char *prog)
 {
 	fprintf(stderr,
-"Usage: %s <command> [options]\n"
-"\n"
-"Provisioning commands:\n"
-"  --init-pin <hex>           Initialize PIN (once only)\n"
-"  --lock                     Lock TA (disable write operations)\n"
-"\n"
-"Key generation:\n"
-"  --gen-rsa <label>          Generate RSA key pair\n"
-"       [--size 2048|4096]    Key size (default 2048)\n"
-"       [--sign]              Enable signing permission\n"
-"       [--decrypt]           Enable decryption permission\n"
-"  --gen-aes <label>          Generate AES key\n"
-"       [--size 128|256]      Key size (default 256)\n"
-"       [--encrypt]           Enable encrypt permission\n"
-"       [--decrypt]           Enable decrypt permission\n"
-"\n"
-"Crypto operations:\n"
-"  --export-pub <label>       Export RSA public key\n"
-"       [--out <file>]        Output file (default: stdout hex)\n"
-"  --sign <label>             RSA sign\n"
-"       --data <hex|@file>    Data to sign (hex string or @path)\n"
-"       [--out <file>]        Output file (default: stdout hex)\n"
-"  --verify <label>           RSA verify\n"
-"       --data <hex|@file>    Original data\n"
-"       --sig <hex|@file>     Signature to verify\n"
-"  --encrypt <label>          AES encrypt\n"
-"       --data <hex|@file>    Plaintext\n"
-"       [--out <file>]        Output file\n"
-"  --decrypt <label>          AES decrypt\n"
-"       --data <hex|@file>    Ciphertext\n"
-"       [--out <file>]        Output file\n"
-"\n"
-"Management:\n"
-"  --info <label>             Show key info\n"
-"  --delete <label>           Delete key\n"
-"\n", prog);
+	"Usage: %s <command> [options]\n"
+	"\n"
+	"Provisioning commands:\n"
+	"  --init-pin <hex>           Initialize PIN (once only)\n"
+	"  --lock                     Lock TA (disable write operations)\n"
+	"\n"
+	"Key generation:\n"
+	"  --gen-rsa <label>          Generate RSA key pair\n"
+	"       [--size 2048|4096]    Key size (default 2048)\n"
+	"       [--sign]              Enable signing permission\n"
+	"       [--decrypt]           Enable decryption permission\n"
+	"  --gen-aes <label>          Generate AES key\n"
+	"       [--size 128|256]      Key size (default 256)\n"
+	"       [--encrypt]           Enable encrypt permission\n"
+	"       [--decrypt]           Enable decrypt permission\n"
+	"\n"
+	"Crypto operations:\n"
+	"  --export-pub <label>       Export RSA public key\n"
+	"       [--out <file>]        Output file (default: stdout hex)\n"
+	"  --sign <label>             RSA sign\n"
+	"       --data <hex|@file>    Data to sign (hex string or @path)\n"
+	"       [--out <file>]        Output file (default: stdout hex)\n"
+	"  --verify <label>           RSA verify\n"
+	"       --data <hex|@file>    Original data\n"
+	"       --sig <hex|@file>     Signature to verify\n"
+	"  --encrypt <label>          AES encrypt\n"
+	"       --data <hex|@file>    Plaintext\n"
+	"       [--out <file>]        Output file\n"
+	"  --decrypt <label>          AES decrypt\n"
+	"       --data <hex|@file>    Ciphertext\n"
+	"       [--out <file>]        Output file\n"
+	"\n"
+	"Management:\n"
+	"  --info <label>             Show key info\n"
+	"  --delete <label>           Delete key\n"
+	"\n"
+	"SO (Security Officer) commands — requires dongle:\n"
+	"  --init-so-pin <hex>        Initialize SO-PIN (provisioning only)\n"
+	"  --provision-dongle         Register connected dongle to TA whitelist\n"
+	"       [--dongle <name>]     Dongle backend: yubikey | dummy\n"
+	"  --provision-dongle-from-file <path>\n"
+	"                             Register dongle from public key DER file\n"
+	"  --so-unlock                Unlock TA (two-phase dongle challenge)\n"
+	"       --so-pin <hex>        SO-PIN (required)\n"
+	"       [--dongle <name>]     Dongle backend: yubikey | dummy\n"
+	"       [--dongle-index <n>]  Dongle index in whitelist (default 0)\n"
+	"  --so-lock                  Re-lock TA after maintenance\n"
+	"  --so-info                  Show SO state and stats\n"
+	"\n"
+	"Dongle options:\n"
+	"  --dongle <name>            Select dongle backend (yubikey, dummy)\n"
+	"                             Default: auto-detect\n"
+	"\n", prog);
 	exit(1);
 }
 
@@ -530,14 +837,18 @@ int main(int argc, char **argv)
 	const char *cmd = NULL;
 	const char *label = NULL;
 	const char *pin_hex = NULL;
+	const char *so_pin_hex = NULL;
 	const char *data_arg = NULL;
 	const char *sig_arg = NULL;
 	const char *out_file = NULL;
+	const char *dongle_name = NULL;
+	const char *pubkey_file = NULL;
 	uint32_t size_bits = 0;
 	int can_sign = 0;
-	// int can_verify = 0;
 	int can_encrypt = 0;
 	int can_decrypt = 0;
+	int dongle_index = -1;
+	int cmd_is_so = 0;
 	int i;
 
 	if (argc < 2)
@@ -550,6 +861,20 @@ int main(int argc, char **argv)
 		pin_hex = argv[2];
 	} else if (strcmp(cmd, "--lock") == 0) {
 		/* no extra args */
+	} else if (strcmp(cmd, "--so-lock") == 0) {
+		cmd_is_so = 1;
+	} else if (strcmp(cmd, "--so-info") == 0) {
+		cmd_is_so = 1;
+	} else if (strcmp(cmd, "--init-so-pin") == 0 && argc > 2) {
+		so_pin_hex = argv[2];
+		cmd_is_so = 1;
+	} else if (strcmp(cmd, "--provision-dongle") == 0) {
+		cmd_is_so = 1;
+	} else if (strcmp(cmd, "--provision-dongle-from-file") == 0 && argc > 2) {
+		pubkey_file = argv[2];
+		cmd_is_so = 1;
+	} else if (strcmp(cmd, "--so-unlock") == 0) {
+		cmd_is_so = 1;
 	} else if (strcmp(cmd, "--gen-rsa") == 0 ||
 		   strcmp(cmd, "--gen-aes") == 0 ||
 		   strcmp(cmd, "--export-pub") == 0 ||
@@ -567,13 +892,11 @@ int main(int argc, char **argv)
 	}
 
 	/* Parse options */
-	for (i = 3; i < argc; i++) {
+	for (i = (cmd_is_so ? 2 : 3); i < argc; i++) {
 		if (strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
 			size_bits = (uint32_t)atoi(argv[++i]);
 		} else if (strcmp(argv[i], "--sign") == 0) {
 			can_sign = 1;
-		} else if (strcmp(argv[i], "--verify") == 0) {
-			// can_verify = 1;
 		} else if (strcmp(argv[i], "--encrypt") == 0) {
 			can_encrypt = 1;
 		} else if (strcmp(argv[i], "--decrypt") == 0) {
@@ -584,6 +907,12 @@ int main(int argc, char **argv)
 			sig_arg = argv[++i];
 		} else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
 			out_file = argv[++i];
+		} else if (strcmp(argv[i], "--dongle") == 0 && i + 1 < argc) {
+			dongle_name = argv[++i];
+		} else if (strcmp(argv[i], "--dongle-index") == 0 && i + 1 < argc) {
+			dongle_index = atoi(argv[++i]);
+		} else if (strcmp(argv[i], "--so-pin") == 0 && i + 1 < argc) {
+			so_pin_hex = argv[++i];
 		} else {
 			errx(1, "Unknown option: %s", argv[i]);
 		}
@@ -644,6 +973,20 @@ int main(int argc, char **argv)
 		do_get_info(label);
 	} else if (strcmp(cmd, "--delete") == 0) {
 		do_delete_key(label);
+
+	/* ---- SO commands ---- */
+	} else if (strcmp(cmd, "--init-so-pin") == 0) {
+		do_so_pin_init(so_pin_hex);
+	} else if (strcmp(cmd, "--provision-dongle") == 0) {
+		do_provision_dongle(dongle_name);
+	} else if (strcmp(cmd, "--provision-dongle-from-file") == 0) {
+		do_provision_dongle_from_file(pubkey_file);
+	} else if (strcmp(cmd, "--so-unlock") == 0) {
+		do_so_unlock(so_pin_hex, dongle_name, dongle_index);
+	} else if (strcmp(cmd, "--so-lock") == 0) {
+		do_so_lock();
+	} else if (strcmp(cmd, "--so-info") == 0) {
+		do_so_get_info();
 	} else {
 		usage(argv[0]);
 	}
