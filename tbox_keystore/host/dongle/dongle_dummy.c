@@ -4,7 +4,7 @@
  * Dummy dongle backend — local P-256 key file for development and CI.
  *
  * Uses a PEM-encoded P-256 private key stored on disk:
- *   Default:  ~/.tbox/dummy-dongle-key.pem
+ *   Default:  /tmp/dummy-dongle-key.pem
  *   Override: $TBOX_DUMMY_KEY=<path>
  *
  * Build:  gcc -c dongle_dummy.c -lssl -lcrypto
@@ -29,20 +29,12 @@ struct dongle_ctx {
 	uint32_t  serial;   /* Virtual serial number */
 };
 
-/* ---- Resolve key file path ---- */
 static const char *key_path(void)
 {
 	const char *env = getenv("TBOX_DUMMY_KEY");
 	if (env)
 		return env;
-
-	const char *home = getenv("HOME");
-	if (!home)
-		return NULL;
-
-	static char path[512];
-	snprintf(path, sizeof(path), "%s/.tbox/dummy-dongle-key.pem", home);
-	return path;
+	return "/tmp/dummy-dongle-key.pem";
 }
 
 /* ---- Probe: check if key file exists ---- */
@@ -74,7 +66,7 @@ static int dummy_open(struct dongle_ctx **ctx_out)
 
 	path = key_path();
 	if (!path) {
-		fprintf(stderr, "[dummy] No key path (set HOME or TBOX_DUMMY_KEY)\n");
+		fprintf(stderr, "[dummy] No key path (set TBOX_DUMMY_KEY)\n");
 		return -1;
 	}
 

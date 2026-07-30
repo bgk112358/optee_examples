@@ -141,17 +141,6 @@ out:
 
 /* ---- ECDSA P-256 verify (for SO dongle challenge-response) ---- */
 
-/*
- * Verify an ECDSA P-256 signature over a pre-computed SHA-256 hash.
- *
- * pubkey_der: SubjectPublicKeyInfo DER (88-91 bytes, standard SPKI).
- * hash:       32-byte SHA-256 digest of the signed message.
- * sig_der:    DER-encoded ECDSA signature (64-72 bytes).
- *
- * The DER is parsed to extract the uncompressed EC point (x, y),
- * a transient ECC object is created, and TEE_AsymmetricVerifyDigest
- * verifies the signature.
- */
 TEE_Result crypto_ecdsa_verify(const uint8_t *pubkey_der, size_t der_len,
 			       const uint8_t *hash, size_t hash_len,
 			       const uint8_t *sig_der, size_t sig_len)
@@ -160,83 +149,69 @@ TEE_Result crypto_ecdsa_verify(const uint8_t *pubkey_der, size_t der_len,
 	TEE_OperationHandle op = TEE_HANDLE_NULL;
 	TEE_Attribute attrs[3];
 	TEE_Result res;
-	const uint8_t *point;
-	size_t point_len;
+	const uint8_t *point = NULL;
+	size_t point_len = 0;
+	size_t off;
+	uint32_t curve;
 
-	/*
-	 * Minimal SPKI DER parser for P-256:
-	 *
-	 *   Offset  Content
-	 *   0       0x30 SEQUENCE
-	 *   1       total len (0x59 = 89 for P-256, or 0x5A = 90)
-	 *   2       0x30 SEQUENCE (algorithm)
-	 *   3       algorithm len (0x13 = 19)
-	 *   4-22    OID: ecPublicKey + prime256v1
-	 *   23      0x03 BIT STRING
-	 *   24      bit string len (0x42 = 66, or 0x43 = 67 with padding)
-	 *   25      0x00 unused bits
-	 *   26      0x04 uncompressed point flag
-	 *   27-58   x coordinate (32 bytes)
-	 *   59-90   y coordinate (32 bytes)
-	 *
-	 * We look for the 0x03 BIT STRING tag, then skip to the 0x04 point.
-	 */
 	if (!pubkey_der || der_len < 88 || !hash || hash_len != 32 || !sig_der)
 		return TEE_ERROR_BAD_PARAMETERS;
 
-	/* Scan for BIT STRING marker 0x03 followed by 0x42 (66 bytes) */
-	{
-		size_t off;
-		int found = 0;
+	/*
+	 * Parse SPKI DER to extract uncompressed EC point (x||y, 64 bytes).
+	 * Format: SEQUENCE { SEQUENCE { OID }, BIT STRING { 0x04 x[32] y[32] } }
+	 * We scan for the BIT STRING tag (0x03) with length >= 0x40 (64+2).
+	 */
+	DMSG("EC: der_len=%zu sig_len=%zu", der_len, sig_len);
 
-		for (off = 22; off + 3 < der_len; off++) {
-			if (pubkey_der[off] == 0x03 &&
-			    pubkey_der[off + 1] >= 0x40 &&
-			    pubkey_der[off + 1] <= 0x44) {
-				point = pubkey_der + off + 3; /* skip tag + len + unused */
-				point_len = pubkey_der[off + 1] - 1; /* minus unused bits byte */
+	for (off = 22; off + 3 < der_len; off++) {
+		if (pubkey_der[off] == 0x03 &&
+		    pubkey_der[off + 1] >= 0x40 &&
+		    pubkey_der[off + 1] <= 0x44) {
+			point = pubkey_der + off + 3;
+			point_len = pubkey_der[off + 1] - 1;
 
-				/* Must start with 0x04 (uncompressed point) */
-				if (point_len >= 65 && point[0] == 0x04) {
-					point++;     /* skip 0x04 flag */
-					point_len = 64; /* x[32] + y[32] */
-					found = 1;
-					break;
-				}
+			if (point_len >= 65 && point[0] == 0x04) {
+				point++;         /* skip 0x04 */
+				point_len = 64;  /* x[32] + y[32] */
+				DMSG("EC: BITSTR at off=%zu x[0..3]=%02x%02x%02x%02x",
+				     off, point[0], point[1], point[2], point[3]);
+				break;
 			}
-		}
-
-		if (!found) {
-			EMSG("ECDSA verify: cannot parse pubkey DER");
-			return TEE_ERROR_BAD_PARAMETERS;
+			point = NULL;
 		}
 	}
 
-	/* Create transient ECC public key object */
-	res = TEE_AllocateTransientObject(TEE_TYPE_ECDSA_PUBLIC_KEY, 256,
-					  &ec_obj);
+	if (!point) {
+		EMSG("ECDSA verify: cannot parse pubkey DER");
+		return TEE_ERROR_BAD_PARAMETERS;
+	}
+
+	/* Create transient ECC object and populate with public key */
+	DMSG("EC: Allocating transient keypair obj...");
+	res = TEE_AllocateTransientObject(TEE_TYPE_ECDSA_KEYPAIR, 256, &ec_obj);
 	if (res != TEE_SUCCESS) {
 		EMSG("Allocate ECC object failed: 0x%x", (unsigned int)res);
 		return res;
 	}
 
-	uint32_t curve = TEE_ECC_CURVE_NIST_P256;
+	curve = TEE_ECC_CURVE_NIST_P256;
 	TEE_InitRefAttribute(&attrs[0], TEE_ATTR_ECC_CURVE,
 			     &curve, sizeof(curve));
-
 	TEE_InitRefAttribute(&attrs[1], TEE_ATTR_ECC_PUBLIC_VALUE_X,
 			     (void *)point, 32);
-
 	TEE_InitRefAttribute(&attrs[2], TEE_ATTR_ECC_PUBLIC_VALUE_Y,
 			     (void *)(point + 32), 32);
 
+	DMSG("EC: Populating with curve+x+y...");
 	res = TEE_PopulateTransientObject(ec_obj, attrs, 3);
+	DMSG("EC: PopulateTransient → 0x%x", (unsigned int)res);
 	if (res != TEE_SUCCESS) {
 		EMSG("Populate ECC object failed: 0x%x", (unsigned int)res);
 		goto out_obj;
 	}
 
-	/* Allocate verify operation */
+	/* Allocate verify operation and verify */
 	res = TEE_AllocateOperation(&op, TEE_ALG_ECDSA_P256,
 				    TEE_MODE_VERIFY, 256);
 	if (res != TEE_SUCCESS) {
@@ -252,6 +227,8 @@ TEE_Result crypto_ecdsa_verify(const uint8_t *pubkey_der, size_t der_len,
 
 	res = TEE_AsymmetricVerifyDigest(op, NULL, 0, hash, hash_len,
 					 sig_der, sig_len);
+	DMSG("EC: AsymmetricVerifyDigest → 0x%x", (unsigned int)res);
+
 out_op:
 	TEE_FreeOperation(op);
 out_obj:

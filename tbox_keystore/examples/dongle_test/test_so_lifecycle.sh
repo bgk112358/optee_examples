@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # ============================================================
 # SO-PIN + Dongle Lifecycle Integration Test
 #
@@ -16,7 +16,7 @@ set -e
 PIN="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 SO_PIN="f1e2d3c4b5a60718293a4b5c6d7e8f90"
 WRONG_PIN="00000000000000000000000000000000"
-CLI="${CLI:-tbox_keystore}"
+CLI="${CLI:-optee_example_tbox_keystore}"
 TMP_DIR="/tmp/tbox_so_test"
 PASS=0
 FAIL=0
@@ -48,10 +48,10 @@ setup() {
     mkdir -p "$TMP_DIR"
 
     # Ensure dummy key exists
-    if [ ! -f "$HOME/.tbox/dummy-dongle-key.pem" ]; then
+    if [ ! -f "/tmp/dummy-dongle-key.pem" ]; then
         info "Generating dummy dongle key..."
         openssl ecparam -genkey -name prime256v1 -noout 2>/dev/null | \
-            openssl pkcs8 -topk8 -nocrypt -out "$HOME/.tbox/dummy-dongle-key.pem" 2>/dev/null
+            openssl pkcs8 -topk8 -nocrypt -out "/tmp/dummy-dongle-key.pem" 2>/dev/null
         ok "Dummy key generated"
     fi
 
@@ -85,7 +85,6 @@ test_so_provision() {
     ok "Second dongle provisioned (from file)"
 
     # Check SO info
-    local out
     out=$($CLI --so-info 2>/dev/null || true)
     echo "$out" | grep -q "PROVISIONED" && ok "SO state: PROVISIONED" || fail "SO state not PROVISIONED"
     echo "$out" | grep -q "2 registered" && ok "Dongle count: 2" || fail "Dongle count not 2"
@@ -107,7 +106,6 @@ test_so_unlock() {
     ok "SO unlock"
 
     # SO info should show UNLOCKED
-    local out
     out=$($CLI --so-info 2>/dev/null || true)
     echo "$out" | grep -q "UNLOCKED" && ok "SO state: UNLOCKED" || fail "SO state not UNLOCKED"
 
@@ -125,7 +123,6 @@ test_so_relock() {
     $CLI --so-lock
     ok "SO re-locked"
 
-    local out
     out=$($CLI --so-info 2>/dev/null || true)
     echo "$out" | grep -q "LOCKED" && ok "SO state: LOCKED" || fail "SO state not LOCKED"
 
@@ -140,7 +137,6 @@ test_error_paths() {
     # Wrong PIN
     check_fail $CLI --so-unlock --so-pin "$WRONG_PIN" --dongle dummy "Wrong SO-PIN"
 
-    local out
     out=$($CLI --so-info 2>/dev/null || true)
     echo "$out" | grep -q "1 consecutive" && ok "Consecutive failures: 1" || fail "Consecutive failures not 1"
 

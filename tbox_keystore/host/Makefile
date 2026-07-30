@@ -49,8 +49,8 @@ clean:
 # Helper: generate a dummy dongle key for development
 .PHONY: gen-dummy-key
 gen-dummy-key:
-	@mkdir -p $${HOME}/.tbox
+	@mkdir -p /tmp
 	@echo "Generating P-256 key for dummy dongle..."
 	openssl ecparam -genkey -name prime256v1 -noout | \
-		openssl pkcs8 -topk8 -nocrypt -out $${HOME}/.tbox/dummy-dongle-key.pem
-	@echo "Key written to $${HOME}/.tbox/dummy-dongle-key.pem"
+		openssl pkcs8 -topk8 -nocrypt -out /tmp/dummy-dongle-key.pem
+	@echo "Key written to /tmp/dummy-dongle-key.pem"

@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <openssl/sha.h>
 
 #include <tee_client_api.h>
 #include "tbox_keystore_ta.h"
@@ -676,13 +677,32 @@ static void do_so_unlock(const char *pin_hex, const char *dongle_name,
 	 *
 	 * See docs/24-so-pin-yubikey-unlock.md §3.1 for the composite spec.
 	 */
-	if (ops->sign(ctx, challenge, 32, sig_der, &sig_len) != 0)
+	/* Hash challenge before signing: msg = SHA256(challenge).
+	 * TA verifies against the same SHA256(challenge). */
+	uint8_t chg_hash[32];
+	SHA256(challenge, 32, chg_hash);
+
+	fprintf(stderr, "[CA] challenge[0..7]=%02x%02x%02x%02x%02x%02x%02x%02x\n",
+		challenge[0],challenge[1],challenge[2],challenge[3],
+		challenge[4],challenge[5],challenge[6],challenge[7]);
+	fprintf(stderr, "[CA] chg_hash[0..7]=%02x%02x%02x%02x%02x%02x%02x%02x\n",
+		chg_hash[0],chg_hash[1],chg_hash[2],chg_hash[3],
+		chg_hash[4],chg_hash[5],chg_hash[6],chg_hash[7]);
+
+	if (ops->sign(ctx, chg_hash, 32, sig_der, &sig_len) != 0)
 		errx(1, "Dongle sign failed");
+
+	fprintf(stderr, "[CA] sig_len=%zu sig[0..7]=%02x%02x%02x%02x%02x%02x%02x%02x\n",
+		sig_len, sig_der[0],sig_der[1],sig_der[2],sig_der[3],
+		sig_der[4],sig_der[5],sig_der[6],sig_der[7]);
 
 	if (ops->get_pubkey(ctx, pubkey_der, &pubkey_len) != 0)
 		errx(1, "Failed to read public key from dongle");
 
-	/* Send verification to TA */
+	fprintf(stderr, "[CA] pubkey_len=%zu pubkey[0..7]=%02x%02x%02x%02x%02x%02x%02x%02x\n",
+		pubkey_len, pubkey_der[0],pubkey_der[1],pubkey_der[2],pubkey_der[3],
+		pubkey_der[4],pubkey_der[5],pubkey_der[6],pubkey_der[7]);
+
 	memset(&op, 0, sizeof(op));
 	op.paramTypes = TEEC_PARAM_TYPES(
 		TEEC_MEMREF_TEMP_INPUT,
@@ -848,7 +868,7 @@ int main(int argc, char **argv)
 	int can_encrypt = 0;
 	int can_decrypt = 0;
 	int dongle_index = -1;
-	int cmd_is_so = 0;
+	int opt_start = 3;  /* first unconsumed argv index */
 	int i;
 
 	if (argc < 2)
@@ -862,19 +882,19 @@ int main(int argc, char **argv)
 	} else if (strcmp(cmd, "--lock") == 0) {
 		/* no extra args */
 	} else if (strcmp(cmd, "--so-lock") == 0) {
-		cmd_is_so = 1;
+		opt_start = 2; /* only argv[1] consumed */
 	} else if (strcmp(cmd, "--so-info") == 0) {
-		cmd_is_so = 1;
+		opt_start = 2;
 	} else if (strcmp(cmd, "--init-so-pin") == 0 && argc > 2) {
 		so_pin_hex = argv[2];
-		cmd_is_so = 1;
+		/* argv[2] consumed, opt_start stays 3 */
 	} else if (strcmp(cmd, "--provision-dongle") == 0) {
-		cmd_is_so = 1;
+		opt_start = 2;
 	} else if (strcmp(cmd, "--provision-dongle-from-file") == 0 && argc > 2) {
 		pubkey_file = argv[2];
-		cmd_is_so = 1;
+		/* argv[2] consumed, opt_start stays 3 */
 	} else if (strcmp(cmd, "--so-unlock") == 0) {
-		cmd_is_so = 1;
+		opt_start = 2;
 	} else if (strcmp(cmd, "--gen-rsa") == 0 ||
 		   strcmp(cmd, "--gen-aes") == 0 ||
 		   strcmp(cmd, "--export-pub") == 0 ||
@@ -892,7 +912,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Parse options */
-	for (i = (cmd_is_so ? 2 : 3); i < argc; i++) {
+	for (i = opt_start; i < argc; i++) {
 		if (strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
 			size_bits = (uint32_t)atoi(argv[++i]);
 		} else if (strcmp(argv[i], "--sign") == 0) {

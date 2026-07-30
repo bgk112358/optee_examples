@@ -142,6 +142,15 @@
  */
 #define CMD_SO_GET_INFO		17
 
+/*
+ * CMD_SO_UNLOCK_CONFIRM - Confirm CA-side ECDSA verification passed.
+ * CA verifies the dongle signature locally with OpenSSL, then calls this
+ * to tell TA to unlock.  TA checks that CMD_SO_UNLOCK_REQ was previously
+ * called (g_so_challenge_valid) before accepting.
+ * param[0] (value)  a: dongle_index that verified successfully
+ */
+#define CMD_SO_UNLOCK_CONFIRM	18
+
 /* ---- Key type identifiers ---- */
 #define KEY_TYPE_RSA_KEYPAIR	1
 #define KEY_TYPE_AES		2

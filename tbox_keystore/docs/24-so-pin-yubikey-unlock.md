@@ -609,7 +609,7 @@ WITH_LIBYKPIV=0 (默认, 开发/调试):
 
 ```
 从本地 PEM 文件读取 P-256 密钥:
-  默认: ~/.tbox/dummy-dongle-key.pem
+  默认: /tmp/dummy-dongle-key.pem
   环境变量: TBOX_DUMMY_KEY=<path>
 
 make gen-dummy-key  → 自动生成测试密钥

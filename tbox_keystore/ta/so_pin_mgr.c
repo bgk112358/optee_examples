@@ -415,12 +415,11 @@ TEE_Result so_unlock_req(const uint8_t *pin, size_t pin_len,
 	DMSG("SO unlock phase 1: challenge generated, %u dongles", count);
 	return TEE_SUCCESS;
 }
-
 /*
+
  * Phase 2: verify dongle signature against challenge.
- *
- * signed_msg = SHA256(challenge || dongle_index_le)
- * TA verifies ECDSA P-256 signature over signed_msg using the provided pubkey.
+ * The dongle signs the raw 32-byte challenge; TA verifies the same bytes.
+ * Challenge is TEE_GenerateRandom output - fresh each Phase 1, no replay risk.
  */
 TEE_Result so_unlock_verify(const uint8_t *pubkey_der, size_t der_len,
 			    const uint8_t *sig_der, size_t sig_len,
@@ -429,9 +428,14 @@ TEE_Result so_unlock_verify(const uint8_t *pubkey_der, size_t der_len,
 {
 	struct so_dongle_list dl;
 	uint8_t pk_hash[32];
-	uint8_t msg_hash[32];
-	uint8_t msg_buf[32 + 4]; /* challenge || dongle_index_le */
 	TEE_Result res;
+
+	/* Debug: entry */
+	DMSG("SO verify: idx=%lu der_len=%zu sig_len=%zu",
+	     (unsigned long)dongle_index, der_len, sig_len);
+	DMSG("SO verify: chg[0..7]=%02x%02x%02x%02x%02x%02x%02x%02x",
+	     challenge[0],challenge[1],challenge[2],challenge[3],
+	     challenge[4],challenge[5],challenge[6],challenge[7]);
 
 	/* Check SO state */
 	if (g_so_state == SO_STATE_BRICKED)
@@ -452,26 +456,34 @@ TEE_Result so_unlock_verify(const uint8_t *pubkey_der, size_t der_len,
 	}
 
 	if (memcmp(pk_hash, dl.entries[dongle_index].pubkey_hash, 32) != 0) {
+		DMSG("SO verify: pk_hash[0..3]=%02x%02x%02x%02x whitelist[%lu][0..3]=%02x%02x%02x%02x",
+		     pk_hash[0], pk_hash[1], pk_hash[2], pk_hash[3],
+		     (unsigned long)dongle_index,
+		     dl.entries[dongle_index].pubkey_hash[0], dl.entries[dongle_index].pubkey_hash[1],
+		     dl.entries[dongle_index].pubkey_hash[2], dl.entries[dongle_index].pubkey_hash[3]);
 		EMSG("Public key not in whitelist at index %u",
 		     (unsigned int)dongle_index);
 		so_record_failure();
 		return TEE_ERROR_ACCESS_DENIED;
 	}
+	DMSG("SO verify: whitelist MATCHED index=%lu", (unsigned long)dongle_index);
 
-	/* Build signed message: SHA256(challenge || dongle_index_le) */
-	memcpy(msg_buf, challenge, 32);
-	msg_buf[32] = (uint8_t)(dongle_index & 0xFF);
-	msg_buf[33] = (uint8_t)((dongle_index >> 8) & 0xFF);
-	msg_buf[34] = (uint8_t)((dongle_index >> 16) & 0xFF);
-	msg_buf[35] = (uint8_t)((dongle_index >> 24) & 0xFF);
-
-	res = so_sha256(msg_buf, sizeof(msg_buf), msg_hash, sizeof(msg_hash));
-	if (res != TEE_SUCCESS)
-		return res;
-
-	/* ECDSA P-256 verify (implemented in crypto_ops.c) */
-	res = crypto_ecdsa_verify(pubkey_der, der_len,
-				  msg_hash, 32, sig_der, sig_len);
+	/*
+	 * Both sides sign/verify SHA-256(challenge):
+	 *   CA:  msg = SHA256(challenge)  → dongle.sign(msg, 32)
+	 *   TA:  msg = SHA256(challenge)  → ECDSA verify(msg, sig)
+	 */
+	{
+		uint8_t msg_hash[32];
+		res = so_sha256(challenge, 32, msg_hash, sizeof(msg_hash));
+		if (res != TEE_SUCCESS)
+			return res;
+			DMSG("SO verify: msg_hash[0..7]=%02x%02x%02x%02x%02x%02x%02x%02x",
+			     msg_hash[0],msg_hash[1],msg_hash[2],msg_hash[3],
+			     msg_hash[4],msg_hash[5],msg_hash[6],msg_hash[7]);
+		res = crypto_ecdsa_verify(pubkey_der, der_len,
+					  msg_hash, 32, sig_der, sig_len);
+	}
 	if (res != TEE_SUCCESS) {
 		EMSG("ECDSA verify failed: 0x%x", (unsigned int)res);
 		so_record_failure();
@@ -551,6 +563,9 @@ void so_pin_get_info(struct so_status *st)
 
 /* ---- Session restore ---- */
 
+/* pin_mgr_is_locked() lives in pin_mgr.c; declared here to avoid header coupling */
+extern int pin_mgr_is_locked(void);
+
 void so_pin_restore(void)
 {
 	/* Check SO_LOCK_UUID first — this records the unlocked state */
@@ -577,8 +592,18 @@ void so_pin_restore(void)
 			return;
 		}
 
-		g_so_state = SO_STATE_LOCKED;
-		DMSG("SO state restored: LOCKED");
+		/*
+		 * Distinguish PROVISIONED vs LOCKED:
+		 *   pin_mgr_is_locked() → the normal provision_lock has been applied → LOCKED
+		 *   otherwise            → SO-PIN+dongle configured but TA not yet locked → PROVISIONED
+		 */
+		if (pin_mgr_is_locked())
+			g_so_state = SO_STATE_LOCKED;
+		else
+			g_so_state = SO_STATE_PROVISIONED;
+
+		DMSG("SO state restored: %s",
+		     g_so_state == SO_STATE_LOCKED ? "LOCKED" : "PROVISIONED");
 		return;
 	}
 
