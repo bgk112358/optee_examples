@@ -530,6 +530,63 @@ const struct dongle_ops *dongle_get(const char *name); // 按名称选择
 
 **后端注册机制**：每个 `dongle_*.c` 暴露一个 `dongle_<name>_get_ops()` 函数（weak symbol），`dongle_factory.c` 按优先级探测：YubiKey → Dummy。
 
+
+### 6.1b 进程模型
+
+Dongle 层**不是独立进程**，所有 `dongle_*.c` 和 `keystore_client.c` 编译进同一个 `tbox_keystore` 二进制，通过本地函数调用通信：
+
+```
+tbox_keystore (单进程, REE 用户态)
+┌─────────────────────────────────────────────┐
+│  main()                          keystore_client.c
+│    ├── dongle_detect()            dongle_factory.c
+│    │   ├── dongle_yubikey_get_ops() → probe()
+│    │   └── dongle_dummy_get_ops()  → probe()
+│    ├── dongle->open()              dongle_dummy.c / dongle_yubikey.c
+│    ├── dongle->sign()              (本地函数调用, 非 IPC)
+│    ├── dongle->get_pubkey()
+│    ├── dongle->close()
+│    └── TEEC_InvokeCommand()        libteec → OP-TEE (SMC)
+└─────────────────────────────────────────────┘
+```
+
+唯一的外部边界：
+- **Dummy 后端** — `fopen()` 读本地 PEM 密钥文件
+- **YubiKey 后端** — `popen("ykman ...")` 调 ykman CLI 子进程，或 libykpiv 直连 USB
+- **TA 通信** — `TEEC_InvokeCommand()` 通过 ARM TrustZone SMC 切换到安全世界
+
+### 6.1c 完整调用链路（以 `--so-unlock` 为例）
+
+```
+$ tbox_keystore --so-unlock --so-pin <PIN> --dongle dummy
+
+main() → do_so_unlock()
+│
+├─ Phase 1: CA ──────────────────▶ TA
+│   TEEC_InvokeCommand(CMD_SO_UNLOCK_REQ)
+│   param: SHA-256(SO-PIN)
+│   return: challenge[32] + dongle_list[]
+│
+├─ Phase 2: CA ──▶ dongle_ops ──▶ dongle_dummy.c
+│   dongle_open("dummy")
+│     ├── dongle_get("dummy")          dongle_factory.c — 查找注册表
+│     └── ops->open(&ctx)              dongle_dummy.c — PEM_read_PrivateKey()
+│   ops->sign(ctx, challenge, 32, sig)  dongle_dummy.c — ECDSA_do_sign()
+│   ops->get_pubkey(ctx, pubkey_der)    dongle_dummy.c — i2d_PUBKEY_bio()
+│   ops->close(ctx)
+│
+└─ Phase 2: CA ──────────────────▶ TA
+    TEEC_InvokeCommand(CMD_SO_UNLOCK_VERIFY)
+    param: pubkey_der + signature + dongle_index
+    TA 内部:
+      ● SHA-256(pubkey_der) 比对白名单
+      ● SHA-256(challenge || dongle_index) 构建签名消息
+      ● TEE_AsymmetricVerifyDigest(TEE_ALG_ECDSA_P256) 验签
+      ● 通过 ↷ LOCKED → UNLOCKED, 失败计数器+1
+```
+
+CA 代码对 dongle 品牌零感知——`--dongle yubikey` 只改 `dongle_get()` 的参数，后续所有 `ops->sign()` 等调用完全不需改动。
+
 ### 6.2 YubiKey 后端
 
 `dongle_yubikey.c` 支持两种通信模式：

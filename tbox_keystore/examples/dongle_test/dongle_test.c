@@ -107,7 +107,7 @@ out:
 	return ret;
 }
 
-/* ---- Test 1: Factory functions ---- */
+/* ---- Test 1: Factory functions + caps ---- */
 TEST(factory)
 {
 	const struct dongle_ops *ops;
@@ -116,6 +116,25 @@ TEST(factory)
 	ops = dongle_get("dummy");
 	CHECK(ops != NULL, "dongle_get(\"dummy\") returned NULL");
 	CHECK(strcmp(ops->name, "dummy") == 0, "backend name mismatch");
+
+	/* Capability flags must include expected features */
+	CHECK((ops->caps & DONGLE_CAP_SIGN) != 0,
+	      "DONGLE_CAP_SIGN not set");
+	CHECK((ops->caps & DONGLE_CAP_GET_PUBKEY) != 0,
+	      "DONGLE_CAP_GET_PUBKEY not set");
+	CHECK((ops->caps & DONGLE_CAP_GET_SERIAL) != 0,
+	      "DONGLE_CAP_GET_SERIAL not set");
+	CHECK((ops->caps & DONGLE_CAP_GET_ATTR) != 0,
+	      "DONGLE_CAP_GET_ATTR not set");
+
+	/* All mandatory function pointers must be non-NULL */
+	CHECK(ops->probe != NULL,      "ops->probe is NULL");
+	CHECK(ops->open != NULL,       "ops->open is NULL");
+	CHECK(ops->close != NULL,      "ops->close is NULL");
+	CHECK(ops->sign != NULL,       "ops->sign is NULL");
+	CHECK(ops->get_pubkey != NULL, "ops->get_pubkey is NULL");
+	CHECK(ops->get_serial != NULL, "ops->get_serial is NULL");
+	CHECK(ops->get_attr != NULL,   "ops->get_attr is NULL");
 
 	/* dongle_get("nonexistent") should return NULL */
 	ops = dongle_get("nonexistent");
