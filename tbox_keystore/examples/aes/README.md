@@ -20,8 +20,8 @@ aes_crypt → libteec (CA) → CMD_FILE_ENCRYPT(21) / CMD_FILE_DECRYPT(22) → T
 ## 命令
 
 ```
-./aes_crypt encrypt --key <label> --in <input> --out <output> [--iv zero|random]
-./aes_crypt decrypt --key <label> --in <input> --out <output> [--iv zero|random]
+./aes_crypt encrypt --key <label> --in <input> --out <output> [--iv zero|random] [--verbose]
+./aes_crypt decrypt --key <label> --in <input> --out <output> [--iv zero|random] [--verbose]
 ```
 
 | 参数 | 默认值 | 说明 |
@@ -32,8 +32,31 @@ aes_crypt → libteec (CA) → CMD_FILE_ENCRYPT(21) / CMD_FILE_DECRYPT(22) → T
 | `--out <file>` | — | 输出文件 |
 | `--iv zero` | ✓ 默认 | 全零 IV，输出文件 = 纯密文 |
 | `--iv random` | — | TA 生成随机 IV，输出文件 = `[16B IV][密文]` |
+| `--verbose` | 关 | 打印每分块耗时明细 |
 
 > 加解密两端的 `--iv` 必须一致。`--iv random` 时解密端自动从文件头读 IV。
+
+### 时间统计
+
+程序末尾打印一行汇总（`CLOCK_MONOTONIC` 纳秒计时，毫秒级精度）：
+
+```
+aes_crypt: encrypt timing: total=12.345 ms  TA-calls=2  TA-time=11.111 ms  file=131072 B  rate=10.62 MB/s
+```
+
+| 字段 | 含义 |
+|------|------|
+| `total` | 整个加解密耗时（含读文件 + TA 调用 + 写文件） |
+| `TA-calls` | TA 调用次数（≤1MB 为 1，分块为 N） |
+| `TA-time` | 所有 TA 调用累计耗时（不含读写文件） |
+| `rate` | 吞吐量 = 文件字节数 / 总耗时（MB/s） |
+
+加 `--verbose` 时，每个分块额外打印一行：
+
+```
+aes_crypt:   chunk 0: 5.234 ms
+aes_crypt:   chunk 1: 4.876 ms
+```
 
 ## 输出文件格式
 
@@ -144,7 +167,9 @@ Size:      256 bits
 Perms:     SIGN=N VERIFY=N ENCRYPT=Y DECRYPT=Y
 
 aes_crypt: encrypt: plain.txt -> data.enc (random IV)
+aes_crypt: encrypt timing: total=2.358 ms  TA-calls=1  TA-time=1.102 ms  file=16384 B  rate=6.94 MB/s
 aes_crypt: decrypt: data.enc -> restored.txt (random IV)
+aes_crypt: decrypt timing: total=2.091 ms  TA-calls=1  TA-time=0.998 ms  file=16384 B  rate=7.84 MB/s
 ROUNDTRIP OK
 ```
 
@@ -153,6 +178,7 @@ ROUNDTRIP OK
 - **CBC + 零 IV 的安全提示**：`--iv zero` 时相同明文+相同密钥产生相同密文（无随机化），仅适合内部演示；生产建议用 `--iv random`。
 - **单次调用上限**：≤ 1 MB 走单次调用；更大文件自动分块，无大小上限。
 - **密钥类型**：必须为 AES 密钥（示例启动时通过 `CMD_GET_INFO` 校验，非 AES 报错退出）。
+- **PKCS#7 填充不占用 TA 堆**：加密末块填充采用 `TEE_CipherUpdate`（主体流式）+ 16 字节尾块 `TEE_CipherDoFinal` 实现，TA 内不复制整块明文，任意大小文件不受 TA 堆（`TA_DATA_SIZE`）限制。
 
 ## 相关文档
 

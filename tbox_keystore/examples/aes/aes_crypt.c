@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <tee_client_api.h>
 #include "tbox_keystore_ta.h"
@@ -34,6 +35,44 @@
 
 static TEEC_Context g_ctx;
 static TEEC_Session g_sess;
+static int g_verbose = 0;
+
+/* ---- Timing (millisecond precision via CLOCK_MONOTONIC) ---- */
+
+static uint64_t now_ns(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000ull +
+	       (uint64_t)ts.tv_nsec;
+}
+
+static void print_ms(const char *tag, uint64_t ns)
+{
+	printf("%s: %llu.%03llu ms\n", tag,
+	       (unsigned long long)(ns / 1000000),
+	       (unsigned long long)((ns % 1000000) / 1000));
+}
+
+static void print_timing(const char *what, uint64_t total_ns,
+			 uint64_t ta_ns, int calls, size_t bytes)
+{
+	double rate = 0.0;
+
+	if (total_ns > 0)
+		rate = (double)bytes * 1000.0 / (double)total_ns; /* MB/s */
+
+	printf("%s: total=%llu.%03llu ms  TA-calls=%d  TA-time=%llu.%03llu ms"
+	       "  file=%zu B  rate=%.2f MB/s\n",
+	       what,
+	       (unsigned long long)(total_ns / 1000000),
+	       (unsigned long long)((total_ns % 1000000) / 1000),
+	       calls,
+	       (unsigned long long)(ta_ns / 1000000),
+	       (unsigned long long)((ta_ns % 1000000) / 1000),
+	       bytes, rate);
+}
 
 static void die(const char *msg)
 {
@@ -45,8 +84,8 @@ static void usage(void)
 {
 	fprintf(stderr,
 		"Usage:\n"
-		"  aes_crypt encrypt --key <label> --in <input> --out <output> [--iv zero|random]\n"
-		"  aes_crypt decrypt --key <label> --in <input> --out <output> [--iv zero|random]\n");
+		"  aes_crypt encrypt --key <label> --in <input> --out <output> [--iv zero|random] [--verbose]\n"
+		"  aes_crypt decrypt --key <label> --in <input> --out <output> [--iv zero|random] [--verbose]\n");
 	exit(1);
 }
 
@@ -116,11 +155,15 @@ static void do_encrypt(const char *label, uint32_t key_size,
 	size_t pos = 0;
 	size_t buf_max;
 	int is_first = 1;
+	int calls = 0;
+	uint64_t t0, t_chunk, t_total, t_ta = 0;
 	TEEC_Result res;
 
 	fseek(fin, 0, SEEK_END);
 	file_size = (size_t)ftell(fin);
 	fseek(fin, 0, SEEK_SET);
+
+	t_total = now_ns();
 
 	buf_max = file_size <= MAX_SINGLE ? file_size : CHUNK_SIZE;
 	if (buf_max < 16)
@@ -150,6 +193,7 @@ static void do_encrypt(const char *label, uint32_t key_size,
 		}
 
 		read_file_bytes(fin, inbuf, chunk_len, "short read from input");
+		t0 = now_ns();
 
 		memset(&meta, 0, sizeof(meta));
 		meta.key_size = key_size;
@@ -177,6 +221,8 @@ static void do_encrypt(const char *label, uint32_t key_size,
 			fprintf(stderr, "aes_crypt: FILE_ENCRYPT failed: 0x%x\n", res);
 			exit(1);
 		}
+		t_ta += now_ns() - t0;
+		calls++;
 		out_len = op.params[3].tmpref.size;
 
 		if (is_first && iv_mode == 1)
@@ -186,12 +232,21 @@ static void do_encrypt(const char *label, uint32_t key_size,
 		/* CBC chaining: next chunk IV = last ciphertext block */
 		memcpy(prev_iv, outbuf + out_len - 16, 16);
 
+		if (g_verbose) {
+			t_chunk = now_ns() - t0;
+			printf("aes_crypt:   chunk %zu: ", pos / CHUNK_SIZE);
+			print_ms("", t_chunk);
+		}
+
 		is_first = 0;
 		pos += chunk_len;
 	}
 
 	free(inbuf);
 	free(outbuf);
+
+	t_total = now_ns() - t_total;
+	print_timing("aes_crypt: encrypt timing", t_total, t_ta, calls, file_size);
 }
 
 static void do_decrypt(const char *label, uint32_t key_size,
@@ -206,11 +261,15 @@ static void do_decrypt(const char *label, uint32_t key_size,
 	size_t pos = 0;
 	size_t buf_max;
 	int is_first = 1;
+	int calls = 0;
+	uint64_t t0, t_chunk, t_total, t_ta = 0;
 	TEEC_Result res;
 
 	fseek(fin, 0, SEEK_END);
 	file_size = (size_t)ftell(fin);
 	fseek(fin, 0, SEEK_SET);
+
+	t_total = now_ns();
 
 	if (iv_mode == 1) {
 		if (file_size < 16)
@@ -251,6 +310,7 @@ static void do_decrypt(const char *label, uint32_t key_size,
 		}
 
 		read_file_bytes(fin, inbuf, chunk_len, "short read from input");
+		t0 = now_ns();
 
 		memset(&meta, 0, sizeof(meta));
 		meta.key_size = key_size;
@@ -278,6 +338,8 @@ static void do_decrypt(const char *label, uint32_t key_size,
 			fprintf(stderr, "aes_crypt: FILE_DECRYPT failed: 0x%x\n", res);
 			exit(1);
 		}
+		t_ta += now_ns() - t0;
+		calls++;
 		out_len = op.params[3].tmpref.size;
 
 		fwrite(outbuf, 1, out_len, fout);
@@ -285,12 +347,21 @@ static void do_decrypt(const char *label, uint32_t key_size,
 		/* CBC chaining: next chunk IV = last ciphertext block */
 		memcpy(prev_iv, inbuf + chunk_len - 16, 16);
 
+		if (g_verbose) {
+			t_chunk = now_ns() - t0;
+			printf("aes_crypt:   chunk %zu: ", pos / CHUNK_SIZE);
+			print_ms("", t_chunk);
+		}
+
 		is_first = 0;
 		pos += chunk_len;
 	}
 
 	free(inbuf);
 	free(outbuf);
+
+	t_total = now_ns() - t_total;
+	print_timing("aes_crypt: decrypt timing", t_total, t_ta, calls, cipher_len);
 }
 
 int main(int argc, char **argv)
@@ -324,6 +395,8 @@ int main(int argc, char **argv)
 			else
 				usage();
 			i++;
+		} else if (strcmp(argv[i], "--verbose") == 0) {
+			g_verbose = 1;
 		} else {
 			usage();
 		}

@@ -149,35 +149,20 @@ TEE_Result crypto_aes_encrypt_ex(TEE_ObjectHandle key, uint32_t key_size_bits,
 {
 	TEE_OperationHandle op = TEE_HANDLE_NULL;
 	TEE_Result res;
-	uint8_t *padded = NULL;
-	size_t pad_len;
-	size_t padded_len;
-	const uint8_t *src;
-	size_t src_len;
+	size_t main_len;
+	size_t rem;
+	size_t n;
+	size_t out_len = 0;
+	uint8_t tail[16];	/* only the final padded block, fixed 16B */
 
-	if (do_padding) {
-		/* PKCS#7: add 1..16 bytes; full block when already aligned */
-		pad_len = 16 - (plain_len % 16);
-		padded_len = plain_len + pad_len;
-		padded = TEE_Malloc(padded_len, 0);
-		if (!padded)
-			return TEE_ERROR_OUT_OF_MEMORY;
-		memcpy(padded, plain, plain_len);
-		memset(padded + plain_len, (int)pad_len, pad_len);
-		src = padded;
-		src_len = padded_len;
-	} else {
-		if (plain_len % 16 != 0)
-			return TEE_ERROR_BAD_PARAMETERS;
-		src = plain;
-		src_len = plain_len;
-	}
+	if (!do_padding && (plain_len % 16 != 0))
+		return TEE_ERROR_BAD_PARAMETERS;
 
 	res = TEE_AllocateOperation(&op, TEE_ALG_AES_CBC_NOPAD,
 				    TEE_MODE_ENCRYPT, key_size_bits);
 	if (res != TEE_SUCCESS) {
 		EMSG("Allocate AES enc op failed: 0x%x", (unsigned int)res);
-		goto out;
+		return res;
 	}
 
 	res = TEE_SetOperationKey(op, key);
@@ -186,12 +171,48 @@ TEE_Result crypto_aes_encrypt_ex(TEE_ObjectHandle key, uint32_t key_size_bits,
 
 	TEE_CipherInit(op, iv, iv_len);
 
-	res = TEE_CipherDoFinal(op, src, src_len, cipher, cipher_len);
+	if (do_padding) {
+		/* PKCS#7: full blocks streamed, remainder + pad in a 16B tail */
+		main_len = plain_len - (plain_len % 16);
+		rem = plain_len % 16;
+	} else {
+		main_len = plain_len;
+		rem = 0;
+	}
+
+	if (main_len > 0) {
+		n = *cipher_len;
+		res = TEE_CipherUpdate(op, plain, main_len, cipher, &n);
+		if (res != TEE_SUCCESS)
+			goto out;
+		out_len += n;
+	}
+
+	if (do_padding) {
+		/* PKCS#7 pad value: full block when already aligned */
+		uint8_t pad_val = (uint8_t)(16 - rem);
+
+		memcpy(tail, plain + main_len, rem);
+		memset(tail + rem, pad_val, pad_val);
+
+		n = *cipher_len - out_len;
+		res = TEE_CipherDoFinal(op, tail, rem + pad_val,
+					cipher + out_len, &n);
+		if (res != TEE_SUCCESS)
+			goto out;
+		out_len += n;
+	} else {
+		n = *cipher_len - out_len;
+		res = TEE_CipherDoFinal(op, NULL, 0, cipher + out_len, &n);
+		if (res != TEE_SUCCESS)
+			goto out;
+		out_len += n;
+	}
+
+	*cipher_len = out_len;
 
 out:
 	TEE_FreeOperation(op);
-	if (padded)
-		TEE_Free(padded);
 	return res;
 }
 
