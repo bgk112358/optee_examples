@@ -35,9 +35,9 @@ optee_examples_AG519M/tbox_keystore/
 │   │   └── dongle_yubikey.c # YubiKey 后端（ykman CLI fallback）
 │   └── Makefile           # DONGLE_BACKENDS 条件编译
 ├── engine/                # OpenSSL ENGINE (e_tbox_keystore.c)
-├── examples/              # engine_test / tls_mutual_auth / https_client / mqtts / dongle_test
+├── examples/              # 各示例（见下方「examples 目录」）
 ├── scripts/               # 产线灌装脚本
-└── docs/                  # 设计文档（25-29 是 YubiKey/SGX 相关）
+└── docs/                  # 设计文档（25-30 是 YubiKey/SGX/调试记录 相关）
 ```
 
 ## 当前实现状态
@@ -77,6 +77,7 @@ optee_examples_AG519M/tbox_keystore/
 | CMD_SO_UNLOCK_CONFIRM | 18 | 解锁确认（当前无参数，**待改 RSA 版**） |
 | CMD_SO_LOCK | 16 | 重新锁定 |
 | CMD_SO_GET_INFO | 17 | SO 状态查询 |
+| **CMD_FILE_ENCRYPT/DECRYPT** | **21/22** | **AES 分块文件加解密（IV 可选零/随机，PKCS#7 在 TA 内）** |
 
 ## 最新工作（最近几轮）
 
@@ -93,7 +94,45 @@ optee_examples_AG519M/tbox_keystore/
 - 这样 TA 可以在 `so_unlock_confirm()` 内**原子完成** RSA 验签 + 白名单匹配，闭合安全缺口
 - doc 29 是完整从零开始的方案文档，还未实施到代码
 
+## examples 目录
+
+| 示例 | 位置 | 功能 | 状态 |
+|------|------|------|:--:|
+| engine_test | `examples/engine_test/` | ENGINE 回调链冒烟测试（RSA 签名） | ✅ 通过 |
+| tls_mutual_auth | `examples/tls_mutual_auth/` | TLS 双向认证 | ✅ 通过 |
+| https_client | `examples/https_client/` | HTTPS 客户端 | ✅ 通过 |
+| mqtts | `examples/mqtts/` | MQTTS 发布/订阅 | ✅ 通过 |
+| dongle_test | `examples/dongle_test/` | dongle 抽象层 + SO-PIN 生命周期测试 | ✅ 9 项通过 |
+| **aes** | `examples/aes/aes_crypt.c` | **文件 AES 加解密（CMD 21/22）** | ✅ 编译通过，待设备实测 |
+| **rsa** | `examples/rsa/rsa_crypt.c` | **文件 RSA-2048 签名/验签 + 吞吐基准** | ✅ 编译通过，待设备实测 |
+
+### aes_crypt（文件 AES 加解密）
+
+- 命令：`encrypt` / `decrypt`，参数 `--key/--in/--out/--iv zero|random/--verbose`
+- 复用 TA 新命令 `CMD_FILE_ENCRYPT`(21) / `CMD_FILE_DECRYPT`(22)
+- IV：`zero`（全零）/ `random`（TA 生成随机 IV，输出文件带 16B IV 头）
+- 填充：**PKCS#7 在 TA 内**（`crypto_aes_encrypt_ex`），**流式实现不占 TA 堆**——主体 `TEE_CipherUpdate` + 16B 尾块 `TEE_CipherDoFinal`，任意大小文件不受 `TA_DATA_SIZE`(32KB) 限制（方案 B，修复 0xFFFF000C）
+- 分块：≤1MB 单次调用，更大文件 64KB 分块，CBC 链式续块（IV=上一块密文尾16B）
+- 依赖：libteec + `ta/include`；无需 OpenSSL
+
+### rsa_crypt（文件 RSA-2048 签名/验签 + 基准）
+
+- 命令：`sign` / `verify`，参数 `--key/--in/--out/--sig/--bench-sec N/--verbose`
+- 复用 TA `CMD_SIGN`(5) / `CMD_VERIFY`(6)，**未改 TA**
+- 密钥权限：`--gen-rsa` 需 `--sign`（`--verify`/`--export-pub` 是 gen-rsa 默认权限，**不支持 `--verify` 选项**）
+- hash 在 CA 用 OpenSSL `SHA256()` 计算（32B 摘要进 TA，`RSASSA-PKCS1-v1_5-SHA256`）
+- 每次运行打印 hash 参数：`hash=SHA-256 digest=32B padding=RSASSA-PKCS1-v1_5 key=RSA-2048 sig=256B`
+- 基准：`--bench-sec N` 循环 TA 调用约 N 秒，输出 `time/ops/avg(ms/op)/rate(ops/s)`
+- 依赖：libteec + OpenSSL（`three_part/openssl/out`）
+
+> 两个新示例均需先跑 `scrypt/setup_aes_key.sh` / `setup_rsa_key.sh` 灌装 PIN+密钥。
+> 构建：`cd examples/<name>/build && cmake .. -DCMAKE_C_COMPILER=<aarch64 gcc> && make`
+
 ## 未完成事项
+
+0. **examples/aes 与 examples/rsa 待设备实测**：
+   - aes：重新部署 `.ta`（含 CMD 21/22）后跑 `aes_crypt encrypt/decrypt` + `cmp` 往返校验；用大文件（如 5MB）验证方案 B 不再报 0xFFFF000C
+   - rsa：跑 `rsa_crypt sign/verify` + `--bench-sec 1` 得真实吞吐
 
 1. **doc 29 方案的代码实施**（RSA-2048 版）：
    - TA 新增 `CMD_PROVISION_DONGLE_MANIFEST`(19)：可信服务器 RSA 签名 manifest → 验签 → 原子替换白名单
