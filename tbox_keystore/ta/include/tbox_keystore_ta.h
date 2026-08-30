@@ -151,6 +151,24 @@
  */
 #define CMD_SO_UNLOCK_CONFIRM	18
 
+/*
+ * CMD_FILE_ENCRYPT - AES-CBC chunked file encrypt (PKCS#7 padding on last chunk)
+ * param[0] (memref) key label string
+ * param[1] (memref inout) struct aes_file_meta (iv in/out, is_first/is_last)
+ * param[2] (memref) plaintext chunk (16-byte multiple, except last)
+ * param[3] (memref) output: ciphertext chunk
+ */
+#define CMD_FILE_ENCRYPT	21
+
+/*
+ * CMD_FILE_DECRYPT - AES-CBC chunked file decrypt (strip PKCS#7 on last chunk)
+ * param[0] (memref) key label string
+ * param[1] (memref inout) struct aes_file_meta (iv in, is_first/is_last)
+ * param[2] (memref) ciphertext chunk (16-byte multiple)
+ * param[3] (memref) output: plaintext chunk
+ */
+#define CMD_FILE_DECRYPT	22
+
 /* ---- Key type identifiers ---- */
 #define KEY_TYPE_RSA_KEYPAIR	1
 #define KEY_TYPE_AES		2
@@ -171,6 +189,15 @@ struct key_info {
 	uint32_t size_bits;
 	uint32_t permissions;
 	uint8_t  label[KEY_LABEL_MAX];
+};
+
+/* Metadata for CMD_FILE_ENCRYPT / CMD_FILE_DECRYPT (chunked file crypto) */
+struct aes_file_meta {
+	uint32_t key_size;	/* AES key size in bits (e.g. 256)          */
+	uint32_t iv_mode;	/* 0 = zero IV, 1 = random IV              */
+	uint32_t is_first;	/* 1 = first chunk                         */
+	uint32_t is_last;	/* 1 = last chunk (apply/strip PKCS#7)     */
+	uint8_t  iv[16];	/* IV: in (decrypt/chain) or out (random)   */
 };
 
 /* ---- SO (Security Officer) shared structures ---- */

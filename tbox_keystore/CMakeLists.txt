@@ -1,6 +1,6 @@
 project(optee_example_tbox_keystore C)
 
-set(OPENSSL_DIR /home/test0923/workspace/three_part/openssl/out)
+set(OPENSSL_DIR /home/test0923/workspace/OP-TEE/three_part/openssl/out)
 
 set (SRC
     host/keystore_client.c

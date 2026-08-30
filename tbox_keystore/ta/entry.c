@@ -47,6 +47,16 @@ TEE_Result crypto_aes_encrypt(TEE_ObjectHandle key, uint32_t key_size_bits,
 TEE_Result crypto_aes_decrypt(TEE_ObjectHandle key, uint32_t key_size_bits,
 			      const uint8_t *cipher, size_t cipher_len,
 			      uint8_t *plain, size_t *plain_len);
+TEE_Result crypto_aes_encrypt_ex(TEE_ObjectHandle key, uint32_t key_size_bits,
+				 const uint8_t *iv, size_t iv_len,
+				 const uint8_t *plain, size_t plain_len,
+				 uint8_t *cipher, size_t *cipher_len,
+				 int do_padding);
+TEE_Result crypto_aes_decrypt_ex(TEE_ObjectHandle key, uint32_t key_size_bits,
+				 const uint8_t *iv, size_t iv_len,
+				 const uint8_t *cipher, size_t cipher_len,
+				 uint8_t *plain, size_t *plain_len,
+				 int do_unpad);
 TEE_Result crypto_rsa_decrypt(TEE_ObjectHandle key, uint32_t key_size_bits,
 			      const uint8_t *cipher, size_t cipher_len,
 			      uint8_t *plain, size_t *plain_len);
@@ -314,6 +324,132 @@ static TEE_Result cmd_decrypt_aes(uint32_t pt,
 				 params[1].memref.size,
 				 params[2].memref.buffer,
 				 &params[2].memref.size);
+out:
+	if (key != TEE_HANDLE_NULL)
+		TEE_FreeTransientObject(key);
+	return res;
+}
+
+/* ---- Chunked file AES encrypt (IV selectable, PKCS#7 on last chunk) ---- */
+
+static TEE_Result cmd_file_encrypt(uint32_t pt,
+				   TEE_Param params[TEE_NUM_PARAMS])
+{
+	const uint32_t exp_pt = TEE_PARAM_TYPES(
+		TEE_PARAM_TYPE_MEMREF_INPUT,
+		TEE_PARAM_TYPE_MEMREF_INOUT,
+		TEE_PARAM_TYPE_MEMREF_INPUT,
+		TEE_PARAM_TYPE_MEMREF_OUTPUT);
+
+	struct aes_file_meta *meta;
+	TEE_ObjectHandle key = TEE_HANDLE_NULL;
+	uint32_t type;
+	uint32_t perms;
+	uint8_t iv[16];
+	size_t iv_len = sizeof(iv);
+	uint32_t key_size_bits;
+	TEE_Result res;
+
+	if (pt != exp_pt)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	if (params[1].memref.size < sizeof(struct aes_file_meta))
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	meta = (struct aes_file_meta *)params[1].memref.buffer;
+
+	res = keystore_load(params[0].memref.buffer,
+			    params[0].memref.size,
+			    &type, &perms, &key);
+	if (res != TEE_SUCCESS)
+		return res;
+
+	if (type != KEY_TYPE_AES) {
+		res = TEE_ERROR_BAD_FORMAT;
+		goto out;
+	}
+
+	res = acl_check(perms, PERM_ENCRYPT);
+	if (res != TEE_SUCCESS)
+		goto out;
+
+	key_size_bits = meta->key_size ? meta->key_size : 256;
+
+	if (meta->is_first) {
+		if (meta->iv_mode == 1)
+			TEE_GenerateRandom(meta->iv, sizeof(meta->iv));
+		else
+			memset(meta->iv, 0, sizeof(meta->iv));
+	}
+	memcpy(iv, meta->iv, sizeof(iv));
+
+	res = crypto_aes_encrypt_ex(key, key_size_bits, iv, iv_len,
+				    params[2].memref.buffer,
+				    params[2].memref.size,
+				    params[3].memref.buffer,
+				    &params[3].memref.size,
+				    meta->is_last);
+out:
+	if (key != TEE_HANDLE_NULL)
+		TEE_FreeTransientObject(key);
+	return res;
+}
+
+/* ---- Chunked file AES decrypt (IV selectable, PKCS#7 strip on last chunk) ---- */
+
+static TEE_Result cmd_file_decrypt(uint32_t pt,
+				   TEE_Param params[TEE_NUM_PARAMS])
+{
+	const uint32_t exp_pt = TEE_PARAM_TYPES(
+		TEE_PARAM_TYPE_MEMREF_INPUT,
+		TEE_PARAM_TYPE_MEMREF_INOUT,
+		TEE_PARAM_TYPE_MEMREF_INPUT,
+		TEE_PARAM_TYPE_MEMREF_OUTPUT);
+
+	struct aes_file_meta *meta;
+	TEE_ObjectHandle key = TEE_HANDLE_NULL;
+	uint32_t type;
+	uint32_t perms;
+	uint8_t iv[16];
+	size_t iv_len = sizeof(iv);
+	uint32_t key_size_bits;
+	TEE_Result res;
+
+	if (pt != exp_pt)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	if (params[1].memref.size < sizeof(struct aes_file_meta))
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	meta = (struct aes_file_meta *)params[1].memref.buffer;
+
+	res = keystore_load(params[0].memref.buffer,
+			    params[0].memref.size,
+			    &type, &perms, &key);
+	if (res != TEE_SUCCESS)
+		return res;
+
+	if (type != KEY_TYPE_AES) {
+		res = TEE_ERROR_BAD_FORMAT;
+		goto out;
+	}
+
+	res = acl_check(perms, PERM_DECRYPT);
+	if (res != TEE_SUCCESS)
+		goto out;
+
+	key_size_bits = meta->key_size ? meta->key_size : 256;
+
+	if (meta->is_first && meta->iv_mode == 0)
+		memset(meta->iv, 0, sizeof(meta->iv));
+	memcpy(iv, meta->iv, sizeof(iv));
+
+	res = crypto_aes_decrypt_ex(key, key_size_bits, iv, iv_len,
+				    params[2].memref.buffer,
+				    params[2].memref.size,
+				    params[3].memref.buffer,
+				    &params[3].memref.size,
+				    meta->is_last);
 out:
 	if (key != TEE_HANDLE_NULL)
 		TEE_FreeTransientObject(key);
@@ -667,6 +803,10 @@ TEE_Result TA_InvokeCommandEntryPoint(void *sess_ctx,
 		return cmd_encrypt_aes(param_types, params);
 	case CMD_DECRYPT_AES:
 		return cmd_decrypt_aes(param_types, params);
+	case CMD_FILE_ENCRYPT:
+		return cmd_file_encrypt(param_types, params);
+	case CMD_FILE_DECRYPT:
+		return cmd_file_decrypt(param_types, params);
 	case CMD_RSA_DECRYPT:
 		return cmd_rsa_decrypt(param_types, params);
 	case CMD_GET_INFO:

@@ -100,10 +100,10 @@ gen_csr <key-label> <CN> [out.csr]
 ```bash
 cd examples/mqtts && mkdir -p build && cd build
 cmake .. -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-    -DOPENSSL_ROOT_DIR=/home/test0923/workspace/three_part/openssl/out \
-    -DOPENSSL_INCLUDE_DIR=/home/test0923/workspace/three_part/openssl/out/include \
-    -DOPENSSL_SSL_LIBRARY=/home/test0923/workspace/three_part/openssl/out/lib/libssl.so \
-    -DOPENSSL_CRYPTO_LIBRARY=/home/test0923/workspace/three_part/openssl/out/lib/libcrypto.so
+    -DOPENSSL_ROOT_DIR=/home/test0923/workspace/OP-TEE/three_part/openssl/out \
+    -DOPENSSL_INCLUDE_DIR=/home/test0923/workspace/OP-TEE/three_part/openssl/out/include \
+    -DOPENSSL_SSL_LIBRARY=/home/test0923/workspace/OP-TEE/three_part/openssl/out/lib/libssl.so \
+    -DOPENSSL_CRYPTO_LIBRARY=/home/test0923/workspace/OP-TEE/three_part/openssl/out/lib/libcrypto.so
 make -j
 ```
 

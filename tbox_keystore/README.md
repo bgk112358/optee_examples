@@ -1,5 +1,13 @@
 # TBox Keystore — OP-TEE Example
 
+
+## QEMU BUILD TA GUIDE
+### export ARCH=arm
+### export PATH=/home/test0923/workspace/OP-TEE/optee400/toolchains/aarch64/bin:$PATH
+### export CROSS_COMPILE=aarch64-linux-gnu-
+### export PLATFORM=vexpress-qemu_virt
+### export TA_DEV_KIT_DIR=/home/test0923/workspace/OP-TEE/optee400/optee_os/out/arm/export-ta_arm64
+
 ## 概述
 
 基于 OP-TEE 的 TBox 安全服务完整实现，包含 TA 密钥管理、OpenSSL ENGINE、TLS/HTTPS/MQTTS 双向认证示例。
@@ -55,9 +63,9 @@ tbox_keystore/
 | TEE Client API | `optee400/optee_client/export-ca_arm64` |
 
 ```bash
-export PATH="/home/test0923/workspace/optee400/toolchains/aarch64/bin:$PATH"
+export PATH="/home/test0923/workspace/OP-TEE/optee400/toolchains/aarch64/bin:$PATH"
 export CC=aarch64-linux-gnu-gcc
-export OPENSSL_DIR=/home/test0923/workspace/three_part/openssl/out
+export OPENSSL_DIR=/home/test0923/workspace/OP-TEE/three_part/openssl/out
 ```
 
 ## 构建

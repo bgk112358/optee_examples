@@ -185,7 +185,7 @@ TA 和 ENGINE 均在 ARM (little-endian) 上运行。TA 通过 `memcpy(header, .
 
 ```bash
 cd engine && mkdir -p build && cd build
-export PATH="/home/test0923/workspace/optee400/toolchains/aarch64/bin:$PATH"
+export PATH="/home/test0923/workspace/OP-TEE/optee400/toolchains/aarch64/bin:$PATH"
 cmake .. -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc
 make -j
 # 产物: libe_tbox_keystore.so

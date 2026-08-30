@@ -27,3 +27,10 @@
 | [19-hsm-chip-reference-architecture.md](19-hsm-chip-reference-architecture.md) | 他人架构参考：HSM 安全芯片支撑 MQTTS 方案（含与 OP-TEE 架构对比分析） |
 | [20-mqtts-debug-issues.md](20-mqtts-debug-issues.md) | MQTTS 双向认证调试问题全记录（方案/实现/部署/7 个问题） |
 | [21-product-manual.md](21-product-manual.md) | **产品说明书** — TBox 安全服务产品定义/架构/场景/灌装/运维/合规 |
+| [24-so-pin-yubikey-unlock.md](24-so-pin-yubikey-unlock.md) | SO-PIN + YubiKey 双因子解锁设计（ECDSA P-256 版历史） |
+| [25-yubikey-guide.md](25-yubikey-guide.md) | YubiKey 4/5 代对比、PIV 功能详解与操作指南 |
+| [26-sgx-provisioning-attestation.md](26-sgx-provisioning-attestation.md) | SGX 远程证明四层次方案（本地/离线签名/云端 SGX） |
+| [27-yubikey-provisioning-trusted-server.md](27-yubikey-provisioning-trusted-server.md) | 可信服务器替代 SGX 的产线灌装方案 |
+| [28-yubikey-full-lifecycle.md](28-yubikey-full-lifecycle.md) | SO 解锁完整闭环 + 安全缺口分析 |
+| [29-rsa-yubikey-provisioning.md](29-rsa-yubikey-provisioning.md) | **最终方案**：RSA-2048 产线灌装与 SO 解锁完整设计 |
+| [30-ecc-p256-ta-unsupported-debug-log.md](30-ecc-p256-ta-unsupported-debug-log.md) | TA 不支持 ECC P-256 验签的调试记录（ECDSA transient panic → RSA） |

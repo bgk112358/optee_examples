@@ -1,6 +1,6 @@
 project(dongle_test C)
 
-set(OPENSSL_DIR /home/test0923/workspace/three_part/openssl/out)
+set(OPENSSL_DIR /home/test0923/workspace/OP-TEE/three_part/openssl/out)
 
 set(SRC
     dongle_test.c

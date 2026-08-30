@@ -139,6 +139,116 @@ out:
 	return res;
 }
 
+/* ---- AES-CBC encrypt with explicit IV + optional PKCS#7 padding ---- */
+
+TEE_Result crypto_aes_encrypt_ex(TEE_ObjectHandle key, uint32_t key_size_bits,
+				 const uint8_t *iv, size_t iv_len,
+				 const uint8_t *plain, size_t plain_len,
+				 uint8_t *cipher, size_t *cipher_len,
+				 int do_padding)
+{
+	TEE_OperationHandle op = TEE_HANDLE_NULL;
+	TEE_Result res;
+	uint8_t *padded = NULL;
+	size_t pad_len;
+	size_t padded_len;
+	const uint8_t *src;
+	size_t src_len;
+
+	if (do_padding) {
+		/* PKCS#7: add 1..16 bytes; full block when already aligned */
+		pad_len = 16 - (plain_len % 16);
+		padded_len = plain_len + pad_len;
+		padded = TEE_Malloc(padded_len, 0);
+		if (!padded)
+			return TEE_ERROR_OUT_OF_MEMORY;
+		memcpy(padded, plain, plain_len);
+		memset(padded + plain_len, (int)pad_len, pad_len);
+		src = padded;
+		src_len = padded_len;
+	} else {
+		if (plain_len % 16 != 0)
+			return TEE_ERROR_BAD_PARAMETERS;
+		src = plain;
+		src_len = plain_len;
+	}
+
+	res = TEE_AllocateOperation(&op, TEE_ALG_AES_CBC_NOPAD,
+				    TEE_MODE_ENCRYPT, key_size_bits);
+	if (res != TEE_SUCCESS) {
+		EMSG("Allocate AES enc op failed: 0x%x", (unsigned int)res);
+		goto out;
+	}
+
+	res = TEE_SetOperationKey(op, key);
+	if (res != TEE_SUCCESS)
+		goto out;
+
+	TEE_CipherInit(op, iv, iv_len);
+
+	res = TEE_CipherDoFinal(op, src, src_len, cipher, cipher_len);
+
+out:
+	TEE_FreeOperation(op);
+	if (padded)
+		TEE_Free(padded);
+	return res;
+}
+
+/* ---- AES-CBC decrypt with explicit IV + optional PKCS#7 strip ---- */
+
+TEE_Result crypto_aes_decrypt_ex(TEE_ObjectHandle key, uint32_t key_size_bits,
+				 const uint8_t *iv, size_t iv_len,
+				 const uint8_t *cipher, size_t cipher_len,
+				 uint8_t *plain, size_t *plain_len,
+				 int do_unpad)
+{
+	TEE_OperationHandle op = TEE_HANDLE_NULL;
+	TEE_Result res;
+	size_t out_len = *plain_len;
+	size_t pad_len;
+	size_t i;
+
+	if (cipher_len % 16 != 0)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	res = TEE_AllocateOperation(&op, TEE_ALG_AES_CBC_NOPAD,
+				    TEE_MODE_DECRYPT, key_size_bits);
+	if (res != TEE_SUCCESS) {
+		EMSG("Allocate AES dec op failed: 0x%x", (unsigned int)res);
+		return res;
+	}
+
+	res = TEE_SetOperationKey(op, key);
+	if (res != TEE_SUCCESS)
+		goto out;
+
+	TEE_CipherInit(op, iv, iv_len);
+
+	res = TEE_CipherDoFinal(op, cipher, cipher_len, plain, &out_len);
+	if (res != TEE_SUCCESS)
+		goto out;
+
+	if (do_unpad) {
+		if (out_len == 0)
+			return TEE_ERROR_BAD_FORMAT;
+		pad_len = plain[out_len - 1];
+		if (pad_len == 0 || pad_len > 16 || pad_len > out_len)
+			return TEE_ERROR_BAD_FORMAT;
+		for (i = 0; i < pad_len; i++) {
+			if (plain[out_len - 1 - i] != pad_len)
+				return TEE_ERROR_BAD_FORMAT;
+		}
+		out_len -= pad_len;
+	}
+
+	*plain_len = out_len;
+
+out:
+	TEE_FreeOperation(op);
+	return res;
+}
+
 /* ---- ECDSA P-256 verify (for SO dongle challenge-response) ---- */
 
 TEE_Result crypto_ecdsa_verify(const uint8_t *pubkey_der, size_t der_len,
