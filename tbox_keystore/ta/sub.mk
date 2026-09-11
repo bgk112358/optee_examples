@@ -4,3 +4,4 @@ srcs-y += pin_mgr.c
 srcs-y += keystore.c
 srcs-y += acl.c
 srcs-y += crypto_ops.c
+srcs-y += so_pin_mgr.c

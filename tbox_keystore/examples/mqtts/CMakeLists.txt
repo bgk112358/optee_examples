@@ -3,8 +3,7 @@ project(tbox_mqtts C)
 
 find_package(OpenSSL 1.1 REQUIRED)
 
-# set(TEEC_INCLUDE_DIR "/home/test0923/workspace/optee400/optee_client/export-ca_arm64/include"
-#     CACHE PATH "TEE Client API headers")
+set(OPENSSL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../three_part/openssl/out)
 
 # ---- paho (patched, installed from three_part/mqtt) ----
 set(PAHO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../three_part/mqtt/out"
@@ -29,8 +28,11 @@ link_directories(
 # ---- Common SSL config (shared by pub + sub) ----
 add_library(ssl_config STATIC ssl_config.c)
 target_link_libraries(ssl_config
-    ${OPENSSL_LIBRARIES}
-    e_tbox_keystore   # ENGINE_load_tbox_keystore, ENGINE_by_id, etc.
+    ${OPENSSL_DIR}/lib/libssl.a
+    ${OPENSSL_DIR}/lib/libcrypto.a
+    engkeystore   # ENGINE_load_tbox_keystore, ENGINE_by_id, etc.
+    pthread
+    dl
 )
 
 # ---- mqtts_pub ----
