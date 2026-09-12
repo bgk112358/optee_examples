@@ -22,13 +22,13 @@ include_directories(
     ${TA_INCLUDE_DIR}
 )
 
-add_library(e_tbox_keystore SHARED e_tbox_keystore.c)
-target_link_libraries(e_tbox_keystore
+add_library(engkeystore SHARED e_tbox_keystore.c)
+target_link_libraries(engkeystore
     ${OPENSSL_LIBRARIES}
     ${TEEC_LIB_DIR}/libteec.a
     ${CMAKE_DL_LIBS}
 )
 
-install(TARGETS e_tbox_keystore
+install(TARGETS engkeystore
     LIBRARY DESTINATION /usr/lib/engines-1.1/
 )

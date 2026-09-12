@@ -10,5 +10,5 @@ include_directories(${OPENSSL_INCLUDE_DIR} ${ENGINE_DIR})
 add_executable(engine_test engine_test.c)
 target_link_libraries(engine_test
     ${OPENSSL_LIBRARIES}
-    ${ENGINE_BUILD}/libe_tbox_keystore.so
+    ${ENGINE_BUILD}/libengkeystore.so
 )

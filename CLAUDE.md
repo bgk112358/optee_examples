@@ -170,3 +170,4 @@ optee_examples_AG519M/tbox_keystore/
 | docs/28-yubikey-full-lifecycle.md | SO 解锁闭环 + 缺口 |
 | docs/29-rsa-yubikey-provisioning.md | **最终方案：RSA-2048 完整设计** |
 | docs/30-ecc-p256-ta-unsupported-debug-log.md | ECDSA P-256 验签不支持调试记录（3.2 ECDSA transient panic → RSA） |
+| docs/31-key-management-and-secure-services.md | 口语化说明：密钥管理（含 dongle）+ HTTPS/MQTTS 安全能力来源 |

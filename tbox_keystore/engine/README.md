@@ -181,6 +181,72 @@ TA 和 ENGINE 均在 ARM (little-endian) 上运行。TA 通过 `memcpy(header, .
 
 `ENGINE_load_private_key(e, "server-key", ...)` 中 key_id 通过 `OPENSSL_strdup` 拷贝后存入 `RSA_set_ex_data`。后续回调通过 `RSA_get_ex_data` 取出。label 是 TA 中密钥的唯一标识，通过 SHA-256(label) → UUID 确定性映射到持久化对象。
 
+## `"tbox_keystore"` 与 `"tbox_key_label"` 名字关联
+
+源码里两个字符串常被混淆，实际是**两条独立接力链**：
+
+```
+接力链 A（找 ENGINE，跨文件靠字符串关联）：
+  ENGINE_load_tbox_keystore()  → ENGINE_set_id(e, "tbox_keystore")
+      应用再 ENGINE_by_id("tbox_keystore") 取回句柄
+      ← 双方必须拼同一个 id 字符串
+
+接力链 B（找 TA 里的密钥，靠 ex_data 槽关联）：
+  ENGINE_load_private_key(e, "client-key")     ← key_id = TA 密钥标签
+      → tbox_load_privkey(): 导出公钥搭 RSA 骨架
+        + OPENSSL_strdup(key_id)  → RSA_set_ex_data(rsa, g_ex_idx, cp)
+      → 之后 tbox_rsa_sign/verify/priv_dec 用 RSA_get_ex_data 取回 label
+        → 作为 CMD_SIGN 的 param[0] 发给 TA
+```
+
+| 字符串 | 本质 | 关联范围 | 能否改名 |
+|--------|------|----------|:---:|
+| `"tbox_key_label"` | RSA ex_data 槽位的**调试名**（`RSA_get_ex_new_index` 第 2 参） | 仅本文件内部自洽 | 能（文件内一致即可） |
+| `"tbox_keystore"` | ENGINE 的**全局 id**（`ENGINE_set_id`） | 本文件 + 所有调用方 `ENGINE_by_id` | 能（双方一致即可） |
+
+> 二者**不互相绑定**：改 id 不影响 ex_data 槽；key label（如 `"client-key"`）与
+> `"tbox_keystore"` id 也无关——id 决定"用哪个引擎"，label 决定"用 TA 里哪把钥匙"。
+
+## 多个 libe_tbox_keystore.so 的选型
+
+> 前提纠偏：把多个 `.so` 同时 `-l` 进同一程序**不能实现运行时选型**，反而会出问题：
+> ① 同名导出符号被遮蔽（链接顺序第一个生效）；② 都 `ENGINE_set_id("tbox_keystore")`，
+> OpenSSL ENGINE 表不允许同 id 并存，第二个 `ENGINE_add` 失败。
+
+正确选型方式，按需求选：
+
+| 需求 | 做法 |
+|------|------|
+| **链接期定用哪个**（本项目现状） | 不要 `-l` 多个。`target_link_libraries` 只写目标 `.so` 路径（如 `${ENGINE_BUILD}/libe_tbox_keystore.so`），换目录即换引擎 |
+| **运行期按路径选一个** | 用**动态引擎加载**（本 `.so` 已具备，`IMPLEMENT_DYNAMIC_BIND_FN`）：不 `-l`，程序 `ENGINE_load_dynamic()` + config 里 `dynamic_path` 指向要用的 `.so` 绝对路径 |
+| **多引擎并存、各接不同 TA** | 必须**改 ENGINE id**：各 `.so` 的 `ENGINE_set_id` 分别设 `"tbox_keystore_a"`/`"tbox_keystore_b"`，代码 `ENGINE_by_id("tbox_keystore_b")` 选对应引擎 |
+
+`openssl.cnf` 动态引擎示例（运行期按路径选）：
+
+```ini
+openssl_conf = openssl_init
+
+[openssl_init]
+engines = engine_section
+
+[engine_section]
+tbox_keystore = tbox_keystore_section
+
+[tbox_keystore_section]
+engine_id = tbox_keystore
+dynamic_path = /usr/lib/engines-1.1/libe_tbox_keystore.so
+```
+
+应用侧等价代码（不依赖 .cnf）：
+```c
+ENGINE *e = ENGINE_by_id("dynamic");
+ENGINE_ctrl_cmd_string(e, "SO_PATH", "/path/to/libe_tbox_keystore.so", 0);
+ENGINE_ctrl_cmd_string(e, "ID", "tbox_keystore", 0);
+ENGINE_ctrl_cmd_string(e, "LIST_ADD", "1", 0);
+ENGINE_ctrl_cmd_string(e, "LOAD", NULL, 0);
+e = ENGINE_by_id("tbox_keystore");
+```
+
 ## 构建
 
 ```bash
