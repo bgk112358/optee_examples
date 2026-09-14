@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
 project(tbox_keystore_engine C)
 
-set(OPENSSL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../three_part/openssl/out)
-find_package(OpenSSL 1.1 REQUIRED)
+# set(OPENSSL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../three_part/openssl/out)
+set(OPENSSL_DIR		/opt/ql-ol-crosstool/sysroots/cortexa7hf-neon-vfpv4-poky-linux-gnueabi/usr/lib)
+set(OPENSSL_INCLUDE_DIR /opt/ql-ol-crosstool/sysroots/cortexa7hf-neon-vfpv4-poky-linux-gnueabi/usr/include)
+#find_package(OpenSSL 1.1 REQUIRED)
 
 #set(TEEC_INCLUDE_DIR "/home/test0923/workspace/optee400/optee_client/export-ca_arm64/include"
 #    CACHE PATH "TEE Client API headers")
@@ -19,11 +21,7 @@ include_directories(
 
 add_library(engkeystore SHARED e_tbox_keystore.c)
 target_link_libraries(engkeystore
-    ${OPENSSL_DIR}/lib/libcrypto.a
+    crypto
     teec
-    ${CMAKE_DL_LIBS}
-)
-
-install(TARGETS engkeystore
-    LIBRARY DESTINATION /usr/lib/engines-1.1/
+    dl
 )
