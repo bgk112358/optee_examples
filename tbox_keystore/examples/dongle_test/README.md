@@ -1,5 +1,15 @@
 # dongle_test — Dongle & SO-PIN Test Suite
 
+> ## ⚠️ 迁移中：C 单元测试待适配（doc 32 → P8）
+>
+> `test_so_lifecycle.sh`（集成测试）**已适配 RSA-2048，可用**。
+> 但 `dongle_test`（C 单元测试）仍按 **P-256 / ECDSA** 断言（生成 P-256 密钥、
+> 用 `ECDSA_do_verify` 验签、断言 `pubkey_len ≤ 256`），在 TA 改为 RSA-2048 验签后
+> **会失败**。
+>
+> 计划在 **doc 32 的 P8 阶段**一并适配（届时改为加载 `dummy.so` 插件）。
+> 参见 [docs/32 §迁移中的已知破损](../../docs/32-dongle-plugin-architecture.md)。
+
 ## 概述
 
 两个测试，覆盖 dongle 抽象层 + SO-PIN 全生命周期。
@@ -133,12 +143,17 @@ cmake .. && make
 
 - TEE + TA 已部署（QEMU 或真机）
 - `tbox_keystore` 在 PATH（CA 可执行文件已编译并部署）
-- Dummy dongle 密钥（脚本内置自动生成，无需手动执行 `make gen-dummy-key`）：
+- Dummy dongle 密钥（**RSA-2048**；脚本内置自动生成，无需手动执行）：
   ```bash
-  # 可选手动生成：
+  # 目标机上（QEMU / 真机，无 openssl 命令行）：
+  dummy_genkey /tmp/dummy-dongle-key.pem
+
+  # 开发机上（有 openssl 命令行）：
   cd host && make gen-dummy-key
-  # → 生成 /tmp/dummy-dongle-key.pem (P-256 密钥)
+  # → 生成 /tmp/dummy-dongle-key.pem (RSA-2048)
   ```
+  > 密钥类型必须是 **RSA-2048**：TA 在安全世界内用
+  > `TEE_ALG_RSASSA_PKCS1_V1_5_SHA256` 验签，ECDSA 已不再支持（见 docs/30、docs/32 §4）。
 
 ### 运行
 

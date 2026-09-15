@@ -140,7 +140,7 @@ struct dongle_ops {
 
 | 后端 | 文件 | 是谁 | 用在哪 |
 |------|------|------|--------|
-| **dummy** | `dongle_dummy.c` | 本地一份 P-256 密钥文件（模拟狗） | 开发/CI/没硬件的机器（`make gen-dummy-key` 生成） |
+| **dummy** | `dongle_dummy.c` | 本地一份 **RSA-2048** 密钥文件（模拟狗） | 开发/CI/没硬件的机器（目标机用 `dummy_genkey`，开发机用 `make gen-dummy-key`） |
 | **yubikey** | `dongle_yubikey.c` | 真实 YubiKey，走 `ykman` CLI 或 libykpiv | 产线/真机（真狗） |
 | **factory** | `dongle_factory.c` | 按名字查后端注册表 | 总入口 |
 

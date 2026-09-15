@@ -6,6 +6,24 @@
 >
 > **结论**：OP-TEE 3.2 不支持 ECDSA transient object，TA 无法在安全世界内做 ECDSA 验签 → 改用 RSA-2048（OP-TEE 3.2 原生支持）。
 
+> ## ⚠️ 实施状态：方案已定，代码未落
+>
+> 本文 §2.5 与开头「结论」描述的 **RSA-2048 方案尚未实施到代码**。
+> 本文记录的是**"为什么这样决策"的历史过程**，不是"已经做完"的实现说明。
+>
+> 当前代码（**以 QEMU 分支为准**，真机分支跟随 QEMU）实际是：
+>
+> | 环节 | 代码实际 | 本文 / doc 29 的目标 |
+> |---|---|---|
+> | dongle 密钥类型 | **P-256**（`dummy_sign` 用 `ECDSA_do_sign`，校验 `prime256v1`） | RSA-2048 |
+> | 验签位置 | **CA 侧** `ECDSA_do_verify`（不可信 REE） | TA 内（安全世界） |
+> | TA 行为 | **不验签、不查白名单**（`CMD_SO_UNLOCK_CONFIRM` 的 `exp_pt` 是 4 个 `NONE`） | 原子完成验签 + 白名单匹配 |
+> | 白名单公钥长度上限 | **88–256 B**（P-256 SPKI = 91 B 正好） | 需放宽（RSA-2048 公钥 ≈ 294 B） |
+> | `crypto_rsa_verify()` | 仅用于**业务密钥**路径（`CMD_VERIFY`=6） | 也用于 dongle 验签 |
+>
+> 结论：**doc 28 描述的安全缺口目前依然存在**。
+> 实施计划见 [32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md) §8 与 [29-rsa-yubikey-provisioning.md](29-rsa-yubikey-provisioning.md) §7.3。
+
 ---
 
 ## 一、问题概述

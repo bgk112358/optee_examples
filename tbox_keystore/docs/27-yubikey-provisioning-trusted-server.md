@@ -1,5 +1,18 @@
 # 27 — 基于可信服务器的 YubiKey 灌装方案
 
+> ## ⚠️ 实施状态：方案已定，代码未落
+>
+> **本文是设计文档，尚未实施到代码**（以 QEMU 分支为准，真机分支跟随 QEMU）。
+>
+> 文中描述的"可信服务器签名白名单 → TA 验签后接受"流程依赖
+> `CMD_PROVISION_DONGLE_MANIFEST`(19) 与 TA 内 RSA 验签，
+> **这些目前均未实现**。当前代码实际是：
+> dongle 为 **P-256**、验签在 **CA 侧**、TA 的 `CMD_SO_UNLOCK_CONFIRM` **无参数且不验签**
+> → [doc 28](28-yubikey-full-lifecycle.md) 描述的**安全缺口依然存在**。
+>
+> 实施计划见 [32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md) §8
+> 与 [29-rsa-yubikey-provisioning.md](29-rsa-yubikey-provisioning.md) §7.3。
+
 ## 摘要
 
 当工控机为第三方维护且安全官员不可信时，将白名单签名权从产线完全移出，集中到一台**物理隔离的可信 Linux 服务器**。这台服务器代替 §26 方案 C 中的云端 SGX enclave，由 OEM IT 管理员直接管控。

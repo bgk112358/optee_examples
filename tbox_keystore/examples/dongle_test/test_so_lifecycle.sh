@@ -49,12 +49,20 @@ setup() {
     info "Setup"
     mkdir -p "$TMP_DIR"
 
-    # Ensure dummy key exists
+    # Ensure dummy key exists (RSA-2048 — the TA verifies RSA/PKCS#1 v1.5/SHA-256)
     if [ ! -f "/tmp/dummy-dongle-key.pem" ]; then
-        info "Generating dummy dongle key..."
-        openssl ecparam -genkey -name prime256v1 -noout 2>/dev/null | \
-            openssl pkcs8 -topk8 -nocrypt -out "/tmp/dummy-dongle-key.pem" 2>/dev/null
-        ok "Dummy key generated"
+        info "Generating dummy dongle key (RSA-2048)..."
+        if command -v dummy_genkey >/dev/null 2>&1; then
+            # Target-side generator: no `openssl` CLI needed (see docs/32 §6.4)
+            dummy_genkey /tmp/dummy-dongle-key.pem >/dev/null 2>&1
+        else
+            # Host fallback (dev machine has the openssl CLI)
+            openssl genrsa -out /tmp/dummy-dongle-key.pem 2048 2>/dev/null
+        fi
+        if [ ! -f "/tmp/dummy-dongle-key.pem" ]; then
+            fail "Failed to generate dummy dongle key (need dummy_genkey or openssl)"
+        fi
+        ok "Dummy key generated (RSA-2048)"
     fi
 
     # Provision device identity
@@ -80,9 +88,17 @@ test_so_provision() {
     $CLI --provision-dongle --dongle dummy
     ok "Dongle provisioned (auto-detect)"
 
-    # Create a second dummy key and provision from file
-    openssl ecparam -genkey -name prime256v1 2>/dev/null | \
-        openssl pkey -pubout -outform DER -out "$TMP_DIR/dongle2.der" 2>/dev/null
+    # Create a second dummy key (RSA-2048) and provision from its public key DER
+    if command -v dummy_genkey >/dev/null 2>&1; then
+        # Target-side: generate + export, no openssl CLI needed
+        dummy_genkey "$TMP_DIR/dongle2.pem" >/dev/null 2>&1
+        dummy_genkey --pubout "$TMP_DIR/dongle2.pem" "$TMP_DIR/dongle2.der" >/dev/null 2>&1
+    else
+        # Host fallback
+        openssl genrsa -out "$TMP_DIR/dongle2.pem" 2048 2>/dev/null
+        openssl rsa -in "$TMP_DIR/dongle2.pem" -pubout -outform DER \
+            -out "$TMP_DIR/dongle2.der" 2>/dev/null
+    fi
     $CLI --provision-dongle-from-file "$TMP_DIR/dongle2.der"
     ok "Second dongle provisioned (from file)"
 

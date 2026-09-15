@@ -36,8 +36,9 @@ optee_examples_AG519M/tbox_keystore/
 │   └── Makefile           # DONGLE_BACKENDS 条件编译
 ├── engine/                # OpenSSL ENGINE (e_tbox_keystore.c)
 ├── examples/              # 各示例（见下方「examples 目录」）
+├── remote-signer/         # 远端签名服务（Python，跑在上位机/云端）— docs/32 P1
 ├── scripts/               # 产线灌装脚本
-└── docs/                  # 设计文档（25-30 是 YubiKey/SGX/调试记录 相关）
+└── docs/                  # 设计文档（25-32 是 YubiKey/SGX/dongle/调试记录 相关）
 ```
 
 ## 当前实现状态
@@ -171,3 +172,4 @@ optee_examples_AG519M/tbox_keystore/
 | docs/29-rsa-yubikey-provisioning.md | **最终方案：RSA-2048 完整设计** |
 | docs/30-ecc-p256-ta-unsupported-debug-log.md | ECDSA P-256 验签不支持调试记录（3.2 ECDSA transient panic → RSA） |
 | docs/31-key-management-and-secure-services.md | 口语化说明：密钥管理（含 dongle）+ HTTPS/MQTTS 安全能力来源 |
+| docs/32-dongle-plugin-architecture.md | **Dongle 可插拔设计（本地软狗 + 远程 SSH 签名狗，RSA-2048，TA 内验签）— 未实施** |

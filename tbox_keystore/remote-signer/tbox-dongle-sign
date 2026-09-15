@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+tbox-dongle-sign — TBox 远端签名服务（远程签名狗）
+
+运行在上位机（Ubuntu）或云端。TBox 设备通过 SSH 调用本服务，由本服务持有的
+RSA-2048 私钥对 challenge 摘要签名。**私钥永不出本机。**
+
+对应设计文档：docs/32-dongle-plugin-architecture.md §7
+
+协议（hex 文本，便于 SSH 传输与调试）：
+    ping                    → OK                       探测服务可用性
+    getpub                  → hex(DER 公钥)             供 TA 白名单登记
+    sign <hex 32B digest>   → hex(DER 签名 256B)       对 SHA-256 摘要签名
+    info                    → key=value 信息
+    genkey [--bits N]       → 生成密钥（管理员本地执行，不经 SSH）
+    serve                   → SSH 强制命令模式（读 $SSH_ORIGINAL_COMMAND）
+
+退出码：
+    0 成功   1 用法错误   2 参数错误   3 密钥/配置缺失   4 策略拒绝   5 内部错误
+"""
+
+import hashlib
+import json
+import os
+import sys
+
+# ---- 路径配置（可用环境变量覆盖，便于开发/测试）----
+HOME_DIR = os.environ.get("TBOX_DONGLE_SIGN_HOME", "/opt/tbox-dongle-sign")
+KEY_PATH = os.environ.get("TBOX_DONGLE_SIGN_KEY", os.path.join(HOME_DIR, "keys", "dongle.pem"))
+DEVICES_PATH = os.environ.get("TBOX_DONGLE_SIGN_DEVICES", os.path.join(HOME_DIR, "devices.json"))
+
+SERVICE_NAME = "tbox-dongle-sign"
+SERVICE_VERSION = "1.0.0"
+KEY_BITS = 2048
+DIGEST_LEN = 32  # SHA-256
+
+EXIT_OK, EXIT_USAGE, EXIT_ARG, EXIT_KEY, EXIT_POLICY, EXIT_INTERNAL = 0, 1, 2, 3, 4, 5
+
+
+def die(code, msg):
+    """把错误打到 stderr 并退出。stdout 只用于协议数据。"""
+    print("%s: error: %s" % (SERVICE_NAME, msg), file=sys.stderr)
+    sys.exit(code)
+
+
+# ---------------------------------------------------------------- 依赖
+
+try:
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa, utils
+except ImportError:
+    die(EXIT_INTERNAL, "需要 python3-cryptography（apt install python3-cryptography "
+                       "或 pip3 install cryptography）")
+
+
+# ---------------------------------------------------------------- 密钥
+
+def load_private_key():
+    """读取 RSA 私钥；校验类型与位数。"""
+    if not os.path.exists(KEY_PATH):
+        die(EXIT_KEY, "私钥不存在: %s\n  先执行: %s genkey" % (KEY_PATH, sys.argv[0]))
+
+    # 权限检查：私钥不应被他人可读
+    mode = os.stat(KEY_PATH).st_mode & 0o777
+    if mode & 0o077:
+        print("%s: warning: 私钥权限过宽 (%04o)，建议 chmod 600 %s"
+              % (SERVICE_NAME, mode, KEY_PATH), file=sys.stderr)
+
+    with open(KEY_PATH, "rb") as f:
+        key = serialization.load_pem_private_key(f.read(), password=None)
+
+    if not isinstance(key, rsa.RSAPrivateKey):
+        die(EXIT_KEY, "私钥不是 RSA 类型")
+    if key.key_size != KEY_BITS:
+        die(EXIT_KEY, "私钥是 %d 位，本服务要求 %d 位" % (key.key_size, KEY_BITS))
+    return key
+
+
+def pubkey_der(key):
+    """导出公钥 DER（SubjectPublicKeyInfo）——与 TA 白名单登记用的格式一致。"""
+    return key.public_key().public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+
+
+def pubkey_sha256(key):
+    """公钥 DER 的 SHA-256 —— TA 白名单里存的就是这个哈希。"""
+    return hashlib.sha256(pubkey_der(key)).digest()
+
+
+# ---------------------------------------------------------------- 子命令
+
+def cmd_ping(_args):
+    """探测：只回 OK，不做任何密码学操作。"""
+    # 密钥缺失时也要如实报告，否则"可达"是假象
+    if not os.path.exists(KEY_PATH):
+        die(EXIT_KEY, "私钥不存在: %s" % KEY_PATH)
+    print("OK")
+    return EXIT_OK
+
+
+def cmd_getpub(_args):
+    """导出公钥 DER 的 hex。供 TBox 侧执行 --provision-dongle-from-file。"""
+    key = load_private_key()
+    print(pubkey_der(key).hex())
+    return EXIT_OK
+
+
+def cmd_sign(args):
+    """对 32 字节 SHA-256 摘要做 RSA-2048 PKCS#1 v1.5 签名。
+
+    与 TA 的 TEE_ALG_RSASSA_PKCS1_V1_5_SHA256 + TEE_AsymmetricVerifyDigest 一一对应：
+    输入是【摘要】而非原始报文，因此这里用 Prehashed(SHA256)。
+    """
+    if len(args) != 1:
+        die(EXIT_USAGE, "用法: sign <hex 32字节摘要>")
+
+    try:
+        digest = bytes.fromhex(args[0])
+    except ValueError:
+        die(EXIT_ARG, "摘要不是合法 hex")
+
+    if len(digest) != DIGEST_LEN:
+        die(EXIT_ARG, "摘要长度 %d 字节，应为 %d 字节（SHA-256）"
+            % (len(digest), DIGEST_LEN))
+
+    key = load_private_key()
+    sig = key.sign(digest, padding.PKCS1v15(), utils.Prehashed(hashes.SHA256()))
+
+    print(sig.hex())
+    return EXIT_OK
+
+
+def cmd_info(_args):
+    """返回服务与密钥信息（key=value，便于脚本解析）。"""
+    key = load_private_key()
+    der = pubkey_der(key)
+    print("service=%s" % SERVICE_NAME)
+    print("version=%s" % SERVICE_VERSION)
+    print("key_type=RSA-%d" % key.key_size)
+    print("pubkey_der_len=%d" % len(der))
+    print("pubkey_sha256=%s" % pubkey_sha256(key).hex())
+    print("key_path=%s" % KEY_PATH)
+    return EXIT_OK
+
+
+def cmd_genkey(args):
+    """生成 RSA-2048 私钥（管理员本地执行，不经 SSH）。"""
+    bits = KEY_BITS
+    if args:
+        if len(args) == 2 and args[0] == "--bits":
+            try:
+                bits = int(args[1])
+            except ValueError:
+                die(EXIT_USAGE, "--bits 需要整数")
+        else:
+            die(EXIT_USAGE, "用法: genkey [--bits 2048]")
+
+    if os.path.exists(KEY_PATH):
+        die(EXIT_KEY, "私钥已存在，拒绝覆盖: %s" % KEY_PATH)
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=bits)
+
+    key_dir = os.path.dirname(KEY_PATH)
+    if key_dir:
+        os.makedirs(key_dir, mode=0o700, exist_ok=True)
+
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    # 先以 0600 创建，避免"先写后 chmod"的窗口期
+    fd = os.open(KEY_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(pem)
+
+    print("私钥已生成: %s (%d 位, 权限 0600)" % (KEY_PATH, bits), file=sys.stderr)
+    print("公钥 SHA-256: %s" % pubkey_sha256(key).hex(), file=sys.stderr)
+    print("下一步：在 TBox 上用该公钥登记白名单（--provision-dongle-from-file）",
+          file=sys.stderr)
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------- SSH 强制命令
+
+def cmd_serve(_args):
+    """SSH 强制命令模式。
+
+    部署时在 authorized_keys 中写：
+        command="/opt/tbox-dongle-sign/tbox-dongle-sign serve",no-port-forwarding,...
+    这样设备只能执行本服务，无法获得 shell。
+    真正的子命令由 SSH 通过 $SSH_ORIGINAL_COMMAND 传入。
+    """
+    original = os.environ.get("SSH_ORIGINAL_COMMAND", "").strip()
+
+    if not original:
+        # 未通过 SSH（例如管理员本地调试）——提示用法
+        print("%s: serve 模式需由 SSH 调用（$SSH_ORIGINAL_COMMAND 为空）"
+              % SERVICE_NAME, file=sys.stderr)
+        return EXIT_USAGE
+
+    parts = original.split()
+    return dispatch(parts[0], parts[1:])
+
+
+# ---------------------------------------------------------------- 分发
+
+COMMANDS = {
+    "ping": cmd_ping,
+    "getpub": cmd_getpub,
+    "sign": cmd_sign,
+    "info": cmd_info,
+    "genkey": cmd_genkey,
+    "serve": cmd_serve,
+}
+
+
+def dispatch(name, args):
+    handler = COMMANDS.get(name)
+    if handler is None:
+        die(EXIT_USAGE, "未知子命令: %s\n可用: %s"
+            % (name, " ".join(sorted(COMMANDS))))
+    return handler(args)
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__.strip(), file=sys.stderr)
+        return EXIT_USAGE
+    return dispatch(argv[1], argv[2:])
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv))
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 — 顶层兜底，避免把 traceback 泄给设备
+        print("%s: internal error: %s" % (SERVICE_NAME, exc), file=sys.stderr)
+        sys.exit(EXIT_INTERNAL)

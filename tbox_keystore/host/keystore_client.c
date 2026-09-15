@@ -495,7 +495,8 @@ static struct dongle_ctx *dongle_open(const struct dongle_ops **ops_out,
 
 	ops = dongle_name ? dongle_get(dongle_name) : dongle_detect();
 	if (!ops)
-		errx(1, "No dongle available (try --dongle dummy or make gen-dummy-key)");
+		errx(1, "No dongle available (try --dongle dummy; generate a key with "
+			"./dummy_genkey on the target, or `make gen-dummy-key` on the host)");
 
 	if (ops->open(&ctx) != 0)
 		errx(1, "Failed to open dongle: %s", ops->name);
@@ -540,7 +541,7 @@ static void do_provision_dongle(const char *dongle_name)
 	const struct dongle_ops *ops;
 	struct dongle_ctx *ctx;
 	TEEC_Operation op = { 0 };
-	uint8_t pubkey_der[256];
+	uint8_t pubkey_der[SO_DONGLE_PUBKEY_MAX];
 	size_t pubkey_len = sizeof(pubkey_der);
 	TEEC_Result res;
 
@@ -610,9 +611,10 @@ static void do_so_unlock(const char *pin_hex, const char *dongle_name,
 	uint32_t dongle_count;
 	uint32_t *dongle_count_ptr;
 	uint8_t *challenge;
-	uint8_t sig_der[128];
+	/* RSA-2048: signature 256 B, public key DER ~294 B (docs/32 §8.6) */
+	uint8_t sig_der[SO_DONGLE_SIG_MAX];
 	size_t sig_len = sizeof(sig_der);
-	uint8_t pubkey_der[256];
+	uint8_t pubkey_der[SO_DONGLE_PUBKEY_MAX];
 	size_t pubkey_len = sizeof(pubkey_der);
 	TEEC_Operation op;
 	TEEC_Result res;
@@ -706,55 +708,38 @@ static void do_so_unlock(const char *pin_hex, const char *dongle_name,
 		pubkey_len, pubkey_der[0],pubkey_der[1],pubkey_der[2],pubkey_der[3],
 		pubkey_der[4],pubkey_der[5],pubkey_der[6],pubkey_der[7]);
 
-	/* Verify ECDSA signature locally with OpenSSL.
-	 * OP-TEE 3.2 lacks ECDSA transient object support; TA would panic.
-	 * CA verifies the dongle sig, then tells TA to unlock. */
-	{
-		const unsigned char *p;
-		EVP_PKEY *pkey = NULL;
-		EC_KEY *ec = NULL;
-		ECDSA_SIG *ecsig = NULL;
-		int vfy;
+	/*
+	 * The CA deliberately does NOT verify the signature itself.
+	 *
+	 * Verification happens inside the TA (CMD_SO_UNLOCK_CONFIRM): the TA
+	 * re-derives SHA-256(challenge), verifies the RSA signature and matches
+	 * the public key against its whitelist — atomically, in the secure
+	 * world.  The CA merely forwards the two blobs.
+	 *
+	 * This closes the gap documented in docs/28-yubikey-full-lifecycle.md,
+	 * where the TA blindly trusted the CA's "verification passed".
+	 */
+	if (sig_len != 256)
+		errx(1, "Unexpected signature length %zu (expected 256 for RSA-2048)",
+		     sig_len);
 
-		p = pubkey_der;
-		pkey = d2i_PUBKEY(NULL, &p, (long)pubkey_len);
-		if (!pkey)
-			errx(1, "Failed to parse dongle public key DER");
-
-		ec = EVP_PKEY_get0_EC_KEY(pkey);
-		if (!ec) {
-			EVP_PKEY_free(pkey);
-			errx(1, "Dongle public key is not an EC key");
-		}
-
-		p = sig_der;
-		ecsig = d2i_ECDSA_SIG(NULL, &p, (long)sig_len);
-		if (!ecsig) {
-			EVP_PKEY_free(pkey);
-			errx(1, "Failed to parse dongle signature DER");
-		}
-
-		vfy = ECDSA_do_verify(chg_hash, 32, ecsig, ec);
-
-		ECDSA_SIG_free(ecsig);
-		EVP_PKEY_free(pkey);
-
-		if (vfy != 1)
-			errx(1, "CA: ECDSA signature verification FAILED (wrong dongle?)");
-
-		fprintf(stderr, "[CA] ECDSA signature VERIFIED OK\n");
-	}
-
-	/* Tell TA: CA verified the signature, unlock now. */
 	memset(&op, 0, sizeof(op));
 	op.paramTypes = TEEC_PARAM_TYPES(
-		TEEC_NONE, TEEC_NONE, TEEC_NONE, TEEC_NONE);
+		TEEC_MEMREF_TEMP_INPUT,		/* dongle public key DER */
+		TEEC_MEMREF_TEMP_INPUT,		/* RSA signature         */
+		TEEC_NONE, TEEC_NONE);
+	op.params[0].tmpref.buffer = pubkey_der;
+	op.params[0].tmpref.size = pubkey_len;
+	op.params[1].tmpref.buffer = sig_der;
+	op.params[1].tmpref.size = sig_len;
 
 	res = invoke_cmd(CMD_SO_UNLOCK_CONFIRM, &op);
 	ops->close(ctx);
 
 	if (res == TEEC_ERROR_BAD_STATE)
 		errx(1, "SO unlock confirm: challenge not valid (call CMD_SO_UNLOCK_REQ first)");
+	if (res == TEEC_ERROR_ACCESS_DENIED)
+		errx(1, "TA rejected unlock: bad signature, or dongle not in TA whitelist");
 	if (res != TEEC_SUCCESS)
 		errx(1, "SO_UNLOCK_CONFIRM failed: 0x%x", res);
 

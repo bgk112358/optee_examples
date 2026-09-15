@@ -23,6 +23,13 @@
 
 #include "tbox_keystore_ta.h"
 
+/* ---- Internal module APIs (defined in crypto_ops.c) ---- */
+TEE_Result rsa_import_pubkey_from_der(const uint8_t *der, size_t der_len,
+				      TEE_ObjectHandle *key);
+TEE_Result crypto_rsa_verify(TEE_ObjectHandle key, uint32_t key_size_bits,
+			     const uint8_t *data, size_t data_len,
+			     const uint8_t *sig, size_t sig_len);
+
 /* ---- Persistent object UUIDs ---- */
 static const TEE_UUID SO_PIN_UUID = {
 	0xf8e9209a, 0x3c7d, 0x4d6b,
@@ -305,7 +312,12 @@ TEE_Result so_provision_dongle(const uint8_t *pubkey_der, size_t der_len)
 	uint32_t i;
 	TEE_Result res;
 
-	if (!pubkey_der || der_len < 88 || der_len > 256)
+	/*
+	 * Accept RSA-2048 public keys (SubjectPublicKeyInfo DER ~294 bytes).
+	 * The old 256-byte cap was sized for ECDSA P-256 (~91 bytes) and
+	 * silently rejected RSA keys.  Keep a lower bound to reject junk.
+	 */
+	if (!pubkey_der || der_len < 88 || der_len > SO_DONGLE_PUBKEY_MAX)
 		return TEE_ERROR_BAD_PARAMETERS;
 
 	so_dongle_load(&dl);
@@ -382,26 +394,99 @@ TEE_Result so_unlock_req(const uint8_t *pin, size_t pin_len,
 }
 
 /*
- * Confirm CA-side ECDSA verification passed.
- * The CA verified the dongle's signature locally (OpenSSL).
- * TA just records the unlock — the real crypto check was done by CA.
+ * Phase 2 of the SO unlock: verify the dongle's signature IN THE TA and
+ * atomically match its public key against the whitelist.
  *
- * Security: CA and TA run on the same physical chip.  An attacker who
- * can compromise the CA can already call any TA command.  The dongle
- * is still required to produce a valid signature (verified by OpenSSL).
+ * Security: the CA (REE) is untrusted — it may be replaced by an attacker.
+ * Therefore the TA does NOT take the CA's word for it: it re-verifies the
+ * RSA signature itself (steps 1-3 below) and then checks the whitelist
+ * (step 4), both in the same function with no possibility of interruption.
+ * An attacker knowing the SO-PIN and owning the CA still cannot unlock
+ * without a dongle whose public key is in the whitelist.
+ *
+ * Previously this was a no-argument stub that simply trusted the CA
+ * ("CA verified ECDSA") — that was the known gap documented in
+ * docs/28-yubikey-full-lifecycle.md, now closed.
  */
-void so_unlock_confirm(void)
+TEE_Result so_unlock_confirm(const uint8_t *pubkey_der, size_t der_len,
+			     const uint8_t *sig, size_t sig_len,
+			     const uint8_t *challenge, size_t challenge_len)
 {
-	so_reset_consecutive();
-	g_so_state = SO_STATE_UNLOCKED;
+	struct so_dongle_list dl;
+	TEE_ObjectHandle rsa_key = TEE_HANDLE_NULL;
+	uint8_t pk_hash[32];
+	uint8_t chg_hash[32];
+	uint32_t i;
+	TEE_Result res;
 
-	{
-		uint8_t flag = 1;
-		so_obj_delete(&SO_LOCK_UUID);
-		so_obj_create(&SO_LOCK_UUID, &flag, 1);
+	if (!pubkey_der || !sig || !challenge || challenge_len != 32)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	/* ---- Step 1: dongle public key DER -> RSA public key object ---- */
+	res = rsa_import_pubkey_from_der(pubkey_der, der_len, &rsa_key);
+	if (res != TEE_SUCCESS)
+		goto out;
+
+	/* ---- Step 2: SHA-256(challenge) ---- */
+	res = so_sha256(challenge, challenge_len, chg_hash, sizeof(chg_hash));
+	if (res != TEE_SUCCESS)
+		goto out;
+
+	/* ---- Step 3: RSA verify — proves possession of the dongle private key ---- */
+	res = crypto_rsa_verify(rsa_key, 2048, chg_hash, sizeof(chg_hash),
+				sig, sig_len);
+	if (res != TEE_SUCCESS) {
+		/*
+		 * Deliberately NOT counted towards the lockout/brick counter.
+		 * That counter exists to stop SO-PIN brute force; an RSA-2048
+		 * signature cannot be guessed.  Counting it would let a merely
+		 * misconfigured dongle (wrong key / wrong signer) brick the
+		 * device after enough attempts.  ONLY SO-PIN failures count.
+		 */
+		EMSG("SO confirm: RSA signature INVALID (not counted)");
+		goto out;
 	}
 
-	DMSG("SO unlock confirmed (CA verified ECDSA), TA UNLOCKED");
+	/* ---- Step 4: SHA-256(pubkey DER) -> whitelist match ---- */
+	res = so_sha256(pubkey_der, der_len, pk_hash, sizeof(pk_hash));
+	if (res != TEE_SUCCESS)
+		goto out;
+
+	so_dongle_load(&dl);
+
+	for (i = 0; i < dl.count; i++) {
+		if (memcmp(pk_hash, dl.entries[i].pubkey_hash, 32) == 0) {
+			/*
+			 * Steps 3 and 4 both passed, inseparably: the caller
+			 * proved it holds the dongle key AND that dongle is
+			 * authorised.  Only now do we unlock.
+			 */
+			DMSG("SO unlock: RSA verified + whitelist[%u] matched",
+			     i);
+			so_reset_consecutive();
+			g_so_state = SO_STATE_UNLOCKED;
+			{
+				uint8_t flag = 1;
+				so_obj_delete(&SO_LOCK_UUID);
+				so_obj_create(&SO_LOCK_UUID, &flag, 1);
+			}
+			res = TEE_SUCCESS;
+			goto out;
+		}
+	}
+
+	/*
+	 * Signature was valid but this dongle is not authorised.
+	 * Not counted either — same reasoning as above: it is a provisioning
+	 * problem, not an SO-PIN brute-force attempt.
+	 */
+	EMSG("SO confirm: pubkey NOT in whitelist (RSA sig was valid, not counted)");
+	res = TEE_ERROR_ACCESS_DENIED;
+
+out:
+	if (rsa_key != TEE_HANDLE_NULL)
+		TEE_FreeTransientObject(rsa_key);
+	return res;
 }
 
 /* ---- Lock / re-lock ---- */

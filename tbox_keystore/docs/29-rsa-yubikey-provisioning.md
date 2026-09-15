@@ -1,5 +1,17 @@
 # 29 — 基于 YubiKey RSA-2048 的产线灌装与 SO 解锁完整方案
 
+> ## ⚠️ 实施状态：方案已定，代码未落
+>
+> **本文是设计文档，尚未实施到代码。** 文中描述的 TA 内"RSA 验签 + 白名单匹配"、
+> `CMD_SO_UNLOCK_CONFIRM` 带 `pubkey+sig` 参数、`CMD_PROVISION_DONGLE_MANIFEST`(19) 等
+> **全部还未落地**（以 QEMU 分支为准，真机分支跟随 QEMU）。
+>
+> 当前代码实际是：dongle 为 **P-256**、验签在 **CA 侧**（`ECDSA_do_verify`）、
+> TA 的 `CMD_SO_UNLOCK_CONFIRM` **无参数且不验签** → [doc 28](28-yubikey-full-lifecycle.md)
+> 描述的**安全缺口依然存在**。
+>
+> 实施计划见 [32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md) §8 与本文 §7.3。
+
 ## 概述
 
 本文档描述 TBox 安全体系中 YubiKey 的**完整使用闭环**——从硬件采购、初始化、产线灌装到现场 SO 解锁。

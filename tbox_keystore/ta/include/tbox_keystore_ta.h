@@ -143,11 +143,17 @@
 #define CMD_SO_GET_INFO		17
 
 /*
- * CMD_SO_UNLOCK_CONFIRM - Confirm CA-side ECDSA verification passed.
- * CA verifies the dongle signature locally with OpenSSL, then calls this
- * to tell TA to unlock.  TA checks that CMD_SO_UNLOCK_REQ was previously
- * called (g_so_challenge_valid) before accepting.
- * param[0] (value)  a: dongle_index that verified successfully
+ * CMD_SO_UNLOCK_CONFIRM - Phase 2 of SO unlock: submit the dongle's
+ * signature; the TA verifies it and matches the whitelist ITSELF.
+ *
+ * The CA is untrusted: it must NOT be the one deciding whether the
+ * signature was good.  The TA re-verifies (RSA-2048 / PKCS#1 v1.5 /
+ * SHA-256) and then checks the public key against the whitelist,
+ * atomically, before unlocking.
+ *
+ * param[0] (memref) dongle public key DER (RSA-2048, ~294 bytes)
+ * param[1] (memref) RSA PKCS#1 v1.5 signature over SHA-256(challenge)
+ *                   from CMD_SO_UNLOCK_REQ (256 bytes)
  */
 #define CMD_SO_UNLOCK_CONFIRM	18
 
@@ -204,6 +210,20 @@ struct aes_file_meta {
 
 /* Maximum number of authorised dongles per device */
 #define SO_DONGLE_MAX		8
+
+/*
+ * Maximum accepted dongle public key length (DER, SubjectPublicKeyInfo).
+ * 512 covers RSA-2048 (~294 B) with headroom; the previous 256-byte cap
+ * was ECDSA P-256 sized and rejected RSA keys outright.
+ */
+#define SO_DONGLE_PUBKEY_MAX	512
+
+/*
+ * Signature buffer size for the dongle's challenge signature.
+ * RSA-2048 produces 256 bytes; the previous 128-byte buffer was sized
+ * for ECDSA.  512 leaves headroom.
+ */
+#define SO_DONGLE_SIG_MAX	512
 
 /* SO state enum (returned in so_status.state) */
 #define SO_STATE_UNSET		0

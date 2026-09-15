@@ -30,6 +30,7 @@ endif
 CFLAGS += -Wall -I../ta/include
 CFLAGS += -I$(TEEC_EXPORT)/include
 LDADD += -lteec -L$(TEEC_EXPORT)/lib
+LDADD += -ldl          # dlopen/dlsym for the dongle plugin loader
 
 BINARY = tbox_keystore
 
@@ -46,11 +47,14 @@ clean:
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Helper: generate a dummy dongle key for development
+# Helper: generate a dummy dongle key ON THE DEVELOPMENT MACHINE.
+# It uses the `openssl` CLI, which is normally absent on the target
+# (QEMU / real board).  For the target, build and use the `dummy_genkey`
+# CMake target instead — it links libcrypto directly (see docs/32 §6.4).
 .PHONY: gen-dummy-key
 gen-dummy-key:
 	@mkdir -p /tmp
-	@echo "Generating P-256 key for dummy dongle..."
-	openssl ecparam -genkey -name prime256v1 -noout | \
-		openssl pkcs8 -topk8 -nocrypt -out /tmp/dummy-dongle-key.pem
+	@echo "Generating RSA-2048 key for dummy dongle (host-side)..."
+	openssl genrsa -out /tmp/dummy-dongle-key.pem 2048
 	@echo "Key written to /tmp/dummy-dongle-key.pem"
+	@echo "Note: on the target use ./dummy_genkey instead (no openssl CLI there)."
