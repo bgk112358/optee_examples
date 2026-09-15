@@ -89,8 +89,8 @@ gen_csr <key-label> <CN> [out.csr]
 | 依赖 | 来源 | 说明 |
 |------|------|------|
 | `libe_tbox_keystore.so` | `../../engine/build/` | ENGINE 库 |
-| `libpaho-mqtt3cs.so` | `three_part/mqtt/out/` | paho SSL 版（带补丁） |
-| `libpaho-mqtt3c.so` | `three_part/mqtt/out/` | paho TCP 版（tcpprobe 用） |
+| `libeng-paho-mqtt3cs.so` | `three_part/mqtt/out/` | paho SSL 版（带补丁） |
+| `libeng-paho-mqtt3c.so` | `three_part/mqtt/out/` | paho TCP 版（tcpprobe 用） |
 | OpenSSL 1.1.x | `three_part/openssl/out/` | libssl + libcrypto |
 | TA 密钥 (pub-key, sub-key) | TA 灌装 | 发布/订阅私钥 |
 | paho 补丁（SSLSocket） | `paho_patch/` | paho 源码补丁说明 |

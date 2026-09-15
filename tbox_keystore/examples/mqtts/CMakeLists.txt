@@ -37,19 +37,19 @@ target_link_libraries(ssl_config
 add_executable(mqtts_pub mqtts_pub.c)
 target_link_libraries(mqtts_pub
     ssl_config
-    paho-mqtt3cs       # sync + SSL (patched: SSLSocket_setExternalConfigCallback)
+    eng-paho-mqtt3cs   # sync + SSL (patched: SSLSocket_setExternalConfigCallback)
 )
 
 # ---- mqtts_sub ----
 add_executable(mqtts_sub mqtts_sub.c)
 target_link_libraries(mqtts_sub
     ssl_config
-    paho-mqtt3cs
+    eng-paho-mqtt3cs
 )
 
 # ---- tcpprobe_mqtt — paho TCP smoke test (no SSL, no ENGINE) ----
 add_executable(tcpprobe_mqtt tcpprobe_mqtt.c)
-target_link_libraries(tcpprobe_mqtt paho-mqtt3c)
+target_link_libraries(tcpprobe_mqtt eng-paho-mqtt3c)
 
 # ---- gen_csr — CSR generator (ENGINE-signed) ----
 add_executable(gen_csr gen_csr.c)

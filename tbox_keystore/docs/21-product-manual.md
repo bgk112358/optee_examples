@@ -299,7 +299,7 @@ Root CA (自签名, root-ca.crt)
 应用
 ├── libssl.so.1.1 + libcrypto.so.1.1   (OpenSSL 1.1.x)
 ├── libe_tbox_keystore.so               (ENGINE)
-└── libpaho-mqtt3cs.so                  (MQTTS 场景，带补丁)
+└── libeng-paho-mqtt3cs.so              (MQTTS 场景，带补丁)
 ```
 
 ### 5.2 HTTPS 集成

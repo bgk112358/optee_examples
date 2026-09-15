@@ -166,7 +166,7 @@ cp examples/mqtts/build/mqtts_sub                 /usr/bin/
 cp examples/mqtts/build/gen_csr                   /usr/bin/
 
 # paho（MQTTS 场景）
-cp three_part/mqtt/out/lib/libpaho-mqtt3cs.so*    /usr/lib/
+cp three_part/mqtt/out/lib/libeng-paho-mqtt3cs.so* /usr/lib/
 ```
 
 ## 架构特点

@@ -125,7 +125,7 @@ flowchart TB
 
     subgraph SDK[SDK 层 — REE]
         DELIVERY["libtbox_delivery.so<br/>ConfigSSLWithHsm(ctx)<br/>InitHsm / LoadCert / LoadKey"]
-        PAHO["libpaho-mqtt3cs.so<br/>(已打补丁)<br/>SSLSocket_setExternalConfigCallback"]
+        PAHO["libeng-paho-mqtt3cs.so<br/>(已打补丁)<br/>SSLSocket_setExternalConfigCallback"]
     end
 
     subgraph HSM_LAYER[安全芯片驱动层]
@@ -381,7 +381,7 @@ flowchart LR
 <tr><td>交付库</td><td><code>libtbox_delivery.so</code></td><td>InitHsm + ConfigSSLWithHsm + 证书读取</td></tr>
 <tr><td>公共库</td><td><code>librouter_common.so</code></td><td>delivery 库的直接依赖，随 SDK 分发</td></tr>
 <tr><td>HSM 中间件</td><td><code>libnlsafe.so</code><br/><code>libhedsdk_ciu98b.so</code></td><td>芯片驱动，设备镜像预装</td></tr>
-<tr><td>paho (补丁版)</td><td><code>libpaho-mqtt3cs.so</code></td><td>带 SSLSocket_setExternalConfigCallback 补丁</td></tr>
+<tr><td>paho (补丁版)</td><td><code>libeng-paho-mqtt3cs.so</code></td><td>带 SSLSocket_setExternalConfigCallback 补丁</td></tr>
 <tr><td>头文件</td><td><code>tbox/UtlForHsm.h</code><br/><code>paho/SSLSocket.h</code></td><td>InitHsm / ConfigSSLWithHsm / 回调声明</td></tr>
 </table>
 
