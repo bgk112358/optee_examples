@@ -1,0 +1,39 @@
+{
+  "_comment": [
+    "TBox 远端签名服务 — 设备白名单 / 策略 (docs/32 §7.5 §7.7)",
+    "拷贝为 devices.json 并填入真实信息。",
+    "",
+    "策略仅在 SSH 强制命令携带 --device <id> 时生效；",
+    "本地管理员直接调用（不带 --device）不受此文件限制。",
+    "**devices.json 不存在时，带身份的调用一律拒绝（失败关闭）**",
+    "",
+    "fingerprint 可选：填了就要求 sshd 开启 `ExposeAuthInfo yes`，",
+    "服务会拿本次认证的实际公钥指纹与它比对（防拼凑/盗用 authorized_keys 行）。",
+    "用 `ssh-keygen -lf device.pub` 得到 SHA256:... 形式的指纹。",
+    "",
+    "rate_limit 可选：max 次 / window_sec 秒。计数状态在 $TBOX_DONGLE_SIGN_STATE。"
+  ],
+
+  "default_policy": "deny",
+
+  "devices": [
+    {
+      "id": "device-001",
+      "enabled": true,
+      "fingerprint": "SHA256:REPLACE_WITH_real_fingerprint",
+      "rate_limit": { "max": 30, "window_sec": 60 },
+      "note": "产线测试机 #1"
+    },
+    {
+      "id": "device-002",
+      "enabled": true,
+      "rate_limit": { "max": 10, "window_sec": 60 },
+      "note": "现场返修机；未启用指纹校验"
+    },
+    {
+      "id": "device-099",
+      "enabled": false,
+      "note": "已停用 —— 保留条目以便审计追溯，撤销即置 false 或删除本条目"
+    }
+  ]
+}

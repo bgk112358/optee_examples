@@ -55,3 +55,16 @@ target_link_directories (dummy_plugin PRIVATE ${OPENSSL_DIR}/lib)
 target_link_libraries (dummy_plugin PRIVATE ssl crypto)
 
 install (TARGETS dummy_plugin DESTINATION /usr/lib/tbox/dongle)
+
+# ---- Remote signing dongle as a loadable PLUGIN ----
+# The private key lives on an external host (PC / cloud); the device only
+# forwards the challenge over ssh.  Needs no OpenSSL: it never handles key
+# material locally (docs/32 §7).
+add_library (remote_plugin SHARED host/dongle/dongle_remote.c)
+set_target_properties (remote_plugin PROPERTIES
+                       PREFIX ""
+                       OUTPUT_NAME "remote")
+target_include_directories (remote_plugin PRIVATE host/dongle)
+target_link_libraries (remote_plugin PRIVATE ${CMAKE_DL_LIBS})
+
+install (TARGETS remote_plugin DESTINATION /usr/lib/tbox/dongle)

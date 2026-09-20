@@ -3,12 +3,12 @@
 > **一句话**：把 dongle 后端从"编译期静态链接"改成"运行期插件"，并支持两种形态——
 > **本地软狗**（`.so` + 本地 `.key`，开发/CI）与 **远程签名狗**（`.so` 在设备、**私钥在远端**，通过 SSH 请求签名，生产/现场）。
 >
-> **状态**：设计/实施方案。**P1–P5 已实现**（远端签名服务、TA 内验签、CA 配合、
-> 插件框架、本地软狗插件化），其余阶段未实施。
+> **状态**：设计/实施方案。**P1–P7 已实现**（远端签名服务、TA 内验签、CA 配合、
+> 插件框架、本地软狗插件化、远程签名狗插件、白名单/限频/审计），仅 P8/P9/P10 未完成。
 > 已实现部分见 [remote-signer/](../remote-signer/)、`ta/`（§8）、`host/`。
 >
-> ✅ **本地软狗链路已恢复可用**：`dummy.so` 是插件，配合 `<dir>/dummy.key`
-> 即可被探测到（P4 之后的过渡态已由 P5 补齐）。
+> ✅ **两种 dongle 形态均可用了**：本地软狗（`dummy.so` + `<dir>/dummy.key`）
+> 与远程签名狗（`remote.so` + SSH 到上位机/云端，含每设备身份、白名单、限频、审计）。
 >
 > **迁移中的已知破损**（属后续阶段范围，暂不修）：
 > - `examples/dongle_test/`（**C 单元测试**）— 仍按 P-256/ECDSA 断言，**会失败**；
@@ -276,7 +276,19 @@ int (*sign)(struct dongle_ctx *ctx,
 
 > ⚠️ 第 2 步**带存在性判断**是刻意的：加载器总会把插件目录告知插件，
 > 若第 2 步无条件生效，所有把密钥放在 `/tmp` 或用环境变量指定的既有脚本
-> 都会失效。加了存在性判断后，两种用法可共存（已实测，见 §12.1 用例 11-12）。
+> 都会失效。加了存在性判断后，两种用法可共存（已实测，见 §12.1 用例 9-10）。
+
+> ⚠️ **想换一把狗？必须用 `$TBOX_DONGLE_KEY_DUMMY`**（第 1 条），
+> 不能用 `$TBOX_DUMMY_KEY`（第 3 条，会被目录里的 key 覆盖）。
+> 为避免误用，当 `$TBOX_DUMMY_KEY` 被设置但未生效时，插件会打印：
+>
+> ```
+> [dummy] warning: $TBOX_DUMMY_KEY=/tmp/other.key is IGNORED — using <dir>/dummy.key
+>         (the plugin-directory key takes precedence; set $TBOX_DONGLE_KEY_DUMMY to override)
+> ```
+>
+> 这条警告是必需的：否则"用未授权的狗做缺口验证"会**静默**改用已授权的那把，
+> 从而得出相反的错误结论（已实际踩到）。
 
 ### 6.4 dummy 改造点
 
@@ -292,6 +304,34 @@ int (*sign)(struct dongle_ctx *ctx,
 > `libcrypto`，所以 `dummy_genkey` 只链接库、不 shell out。用法：
 > `dummy_genkey [/path/to/dummy-dongle-key.pem]`（默认 `$TBOX_DUMMY_KEY` 或
 > `/tmp/dummy-dongle-key.pem`）。开发机上的 `make gen-dummy-key` 仍走 openssl CLI。
+
+### 6.5 ⚠️ UNLOCKED 不会自动过期（已知缺口，建议修复）
+
+`--so-unlock` 成功后的 UNLOCKED 状态**不会自行失效**。`TA_CloseSessionEntryPoint`
+的注释写得很明确：
+
+```
+UNLOCKED state persists across sessions until:
+  - explicit CMD_SO_LOCK (--so-lock)
+  - 5-minute idle timeout (NOT YET IMPLEMENTED)   ← 未实现
+  - TA restart
+  - 1000 SO-PIN failures
+```
+
+**后果**：维护完若忘记 `--so-lock`，**写保护会一直关着**。
+
+- QEMU 环境（存储为内存盘，`QEMU_PSS_AUTOMOUNT=n`）重启即重置
+- **真机存储是持久的** → `so_pin_restore()` 会把 UNLOCKED 恢复回来
+  → **写保护跨重启持续关闭**
+
+**注意**：`--lock`（provision 写保护）与 SO 状态是**两套独立的锁**。
+`--lock` 不改变 SO 状态；且写操作门禁是
+`pin_mgr_is_locked() && !so_pin_is_unlocked()` ——
+**LOCKED + UNLOCKED 的组合本来就是"允许写入"**（SO 解锁的意义正在于此）。
+所以看到 `--lock` 之后 `--so-info` 仍显示 UNLOCKED **不是 bug**。
+
+**建议**（未实施）：补上原设计里的空闲自动锁（5 分钟或可配置），
+至少在 `--so-info` 输出里加一条醒目提示。
 
 ---
 
@@ -613,8 +653,8 @@ RSA-2048 公钥 DER ≈ **294 字节**、签名 **256 字节**，会在以下三
 | **P3** ✅ | CA 配合：`do_so_unlock()` 传 pubkey+sig；**缓冲区 256→512**（§8.6）；本地软狗转 RSA-2048 | `--so-unlock` 成功 |
 | **P4** ✅ | 插件框架：`dongle_ops.h` ABI + `dongle_factory.c` 重写为加载器 | 空目录 → `detect()==NULL` |
 | **P5** ✅ | 本地软狗插件化（RSA + 导出符号 + `.so`）；密钥路径规则 §6.3 | 插入/拔出用例 |
-| **P6** | 远程签名狗插件（`remote.so` + transport_ssh + 配置 + probe 超时） | 远端可达/不可达用例 |
-| **P7** | 每设备 SSH 身份 + 远端白名单/限频 + 审计日志（含查看入口） | 审计日志可查 |
+| **P6** ✅ | 远程签名狗插件（`remote.so` + transport_ssh + 配置 + probe 超时） | 远端可达/不可达用例 |
+| **P7** ✅ | 每设备 SSH 身份 + 远端白名单/限频 + 审计日志（含查看入口） | 审计日志可查 |
 | **P8** | 构建改造、移除 yubikey 静态路径、`dongle_test` 适配 | `make` + 测试全绿 |
 | **P9** | 云端 transport 接口预留（`transport_http_mtls` 空实现 + 配置项） | 编译通过 |
 | **P10** | 文档与脚本同步 | 人工复核 |
@@ -692,8 +732,37 @@ tbox-dongle-sign audit --tail 20
 
 ### 12.4 缺口闭合验证（重要）
 
-用**改造后的 TA** 验证：只传 `sig` 但**不带合法 pubkey**（或 pubkey 不在白名单）时，TA **必须拒绝**——
-证明 CA 无法再像 doc 28 描述的那样"跳过验签直接解锁"。
+**原理**：改造后 TA 必须**自己**验签 + 查白名单。拿一把**未登记**的狗去解锁必须被拒；
+改造前 `so_unlock_confirm()` 是空壳，**任何狗都能解锁**。
+
+> ⚠️ **关键前提**：要指定"另一把狗"，必须用优先级**最高**的 `$TBOX_DONGLE_KEY_DUMMY`。
+> 用 `$TBOX_DUMMY_KEY` 会被插件目录里的 `dummy.key` 覆盖（§6.3），
+> 那样实际测到的是**已授权**的那把狗，会得出**相反的错误结论**（已实测踩过）。
+
+```bash
+CLI=./keystore        # 二进制名随 CMake 项目名
+
+# ---- 前置：全新设备 ----
+$CLI --init-pin 31323334
+$CLI --init-so-pin 31323334
+$CLI --provision-dongle --dongle dummy     # 登记插件目录里那把狗
+$CLI --lock
+
+# ---- ① 用"未登记"的狗解锁 → 必须被拒 ----
+dummy_genkey /tmp/other.key
+TBOX_DONGLE_KEY_DUMMY=/tmp/other.key \
+    $CLI --so-unlock --so-pin 31323334 --dongle dummy
+#   预期：TA rejected unlock: bad signature, or dongle not in TA whitelist
+
+# ---- ② 换回已登记的那把 → 应成功 ----
+$CLI --so-unlock --so-pin 31323334 --dongle dummy
+#   预期：✓ SO unlock successful
+$CLI --so-lock                              # 收尾：锁回（见 §6.5 注意）
+
+# ---- 等价做法：把插件目录里的 key 临时挪走，$TBOX_DUMMY_KEY 即生效 ----
+```
+
+**判据**：① 被拒（缺口闭合），② 成功（正常路径不受影响）。
 
 ### 12.5 RSA-2048 尺寸回归（验证 §8.6 的修复）
 

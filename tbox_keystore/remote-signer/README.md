@@ -31,8 +31,8 @@ TBox 设备                                   上位机（本服务）
 |------|------|
 | `tbox-dongle-sign` | 主程序（Python 3，可执行） |
 | `selftest.py` | 自测（22 项，覆盖签名格式/参数校验/serve 模式） |
+| `devices.json.example` | 设备白名单 / 策略样例（拷贝为 `devices.json`） |
 | `README.md` | 本文档 |
-| `devices.json` | 设备白名单（**P7 实现**，见下） |
 
 ## 依赖
 
@@ -77,12 +77,47 @@ sudo /opt/tbox-dongle-sign/tbox-dongle-sign genkey
 在签名服务账号（如 `tbox-signer`）的 `~/.ssh/authorized_keys` 中：
 
 ```
-command="/opt/tbox-dongle-sign/tbox-dongle-sign serve",no-port-forwarding,no-pty,no-agent-forwarding,no-X11-forwarding ssh-ed25519 AAAA...设备1公钥... device-001
+command="/opt/tbox-dongle-sign/tbox-dongle-sign serve --device device-001",no-port-forwarding,no-pty,no-agent-forwarding,no-X11-forwarding ssh-ed25519 AAAA...设备1公钥... device-001
 ```
 
+> ⚠️ **身份必须写进 `command=` 里**（`serve --device <id>`）。
+> 行尾的 `device-001` 是 authorized_keys 的**注释字段，不会传给程序**——
+> 只写注释的话服务认不出是哪台设备。
+
 - `command=` 强制只能执行本服务，**设备拿不到 shell**
-- 每台设备一行 → **设备身份由 SSH 公钥提供**，服务端能区分"是哪台设备在请求"
-- **吊销设备 = 删掉这一行**
+- 每台设备一行 → **设备身份由 SSH 公钥提供**
+- **吊销设备 = 删除该行**（或把 `devices.json` 里对应条目的 `enabled` 置 false）
+
+### 3b. 设备白名单 / 限频 / 审计（P7）
+
+```bash
+sudo cp devices.json.example /opt/tbox-dongle-sign/devices.json
+sudo chmod 600 /opt/tbox-dongle-sign/devices.json
+
+# 取设备真实指纹填入 fingerprint 字段
+ssh-keygen -lf device-001.pub        # → SHA256:xxxx
+```
+
+| 能力 | 说明 |
+|------|------|
+| **白名单** | 未登记 / `enabled:false` 的设备一律拒绝（`EXIT_POLICY`=4）。**`devices.json` 不存在时失败关闭** |
+| **指纹校验** | 条目填了 `fingerprint`，就要求 sshd 开启 `ExposeAuthInfo yes`；服务用本次认证的实际公钥指纹比对，防拼凑/盗用 authorized_keys 行 |
+| **限频** | `rate_limit: {max, window_sec}`，计数落在 `$TBOX_DONGLE_SIGN_STATE`（服务每次调用是新进程，状态必须落盘；已加 flock） |
+| **审计** | 每次调用（**含被拒的**）追加一行 JSON 到 `$TBOX_DONGLE_SIGN_AUDIT`（默认 `/var/log/tbox-dongle/audit.jsonl`） |
+
+审计字段：`ts / device / fp / action / digest / result / ms / src / reason`
+
+**查看入口**：
+
+```bash
+tbox-dongle-sign audit --tail 20                    # 最近 20 条（表格）
+tbox-dongle-sign audit --device device-001 --since 1d
+tbox-dongle-sign audit --result denied --tail 50     # 只看被拒的
+tbox-dongle-sign audit --json --tail 5               # 原始 JSON Lines
+```
+
+> 策略**仅对带 `--device` 的 SSH 调用生效**；管理员在本机直接执行子命令
+> （不带 `--device`）不受白名单限制，但仍会以 `device=local` 记入审计。
 
 ### 4. 验证
 
@@ -146,14 +181,15 @@ optee_example_tbox_keystore --so-unlock --so-pin <同一 SO-PIN hex> --dongle re
 | 3 | 每台设备**独立 SSH 身份**，不要共用凭据（否则一台失陷 = 全部设备可签） |
 | 4 | 定期检查 `authorized_keys`，及时删除已停用设备 |
 
-## 后续阶段（未实现）
+## 已完成 / 后续
 
-| 阶段 | 内容 | 位置 |
-|:--:|------|------|
-| **P7** | **设备白名单 `devices.json`**：SSH 指纹 → 设备ID/策略；允许/拒绝判定 | 本服务 |
-| **P7** | **频次限制**（限流） | 本服务 |
-| **P7** | **审计日志**：`audit.jsonl`（JSON Lines，含时间戳/设备/摘要/结果/耗时/来源IP）+ 查看入口（`audit --tail` / `--device`） | 本服务 |
-| **P9** | 云端 transport（`transport_http_mtls`）—— 本期只留接口 | 设备侧 + 云端 |
+| 阶段 | 内容 | 状态 |
+|:--:|------|:--:|
+| **P1** | 协议 + 签名服务（`ping`/`getpub`/`sign`/`info`/`genkey`/`serve`） | ✅ |
+| **P7** | 设备白名单 `devices.json`（含指纹交叉校验） | ✅ |
+| **P7** | 频次限制（`rate_limit`，状态落盘 + flock） | ✅ |
+| **P7** | 审计日志 `audit.jsonl` + 查看入口（`audit --tail/--device/--result/--since/--json`） | ✅ |
+| **P9** | 云端 transport（`transport_http_mtls`）—— 本期只留接口 | 未实现 |
 
 ## 相关文档
 

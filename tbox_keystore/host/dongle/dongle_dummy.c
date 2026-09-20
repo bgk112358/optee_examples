@@ -81,6 +81,7 @@ static int file_readable(const char *path)
 static const char *key_path(void)
 {
 	static char buf[600];
+	static int warned;		/* probe() and open() both call us */
 	const char *env;
 
 	env = getenv("TBOX_DONGLE_KEY_DUMMY");
@@ -89,8 +90,25 @@ static const char *key_path(void)
 
 	if (g_plugin_dir[0]) {
 		snprintf(buf, sizeof(buf), "%s/dummy.key", g_plugin_dir);
-		if (file_readable(buf))
+		if (file_readable(buf)) {
+			/*
+			 * The plugin-dir key wins over the legacy variable.  Say so
+			 * loudly: silently using a different key than the operator
+			 * asked for would make an "unauthorised dongle" test quietly
+			 * exercise the authorised one instead (observed in practice).
+			 * Warn only once — key_path() is called per probe/open.
+			 */
+			env = getenv("TBOX_DUMMY_KEY");
+			if (env && *env && !warned) {
+				warned = 1;
+				fprintf(stderr,
+					"[dummy] warning: $TBOX_DUMMY_KEY=%s is IGNORED — using %s\n"
+					"        (the plugin-directory key takes precedence; "
+					"set $TBOX_DONGLE_KEY_DUMMY to override)\n",
+					env, buf);
+			}
 			return buf;
+		}
 	}
 
 	env = getenv("TBOX_DUMMY_KEY");
