@@ -586,5 +586,5 @@ tbox_keystore --so-unlock --so-pin <SO-PIN> --dongle dummy
 
 > 相关文档：
 > - [24-so-pin-yubikey-unlock.md](24-so-pin-yubikey-unlock.md) — SO-PIN 双因子解锁完整方案
-> - [host/dongle/dongle_ops.h](../host/dongle/dongle_ops.h) — dongle 抽象层接口
-> - [host/dongle/dongle_yubikey.c](../host/dongle/dongle_yubikey.c) — YubiKey 后端实现
+> - [dongle/dongle_ops.h](../dongle/dongle_ops.h) — dongle 抽象层接口
+> - [dongle/dongle_yubikey.c](../dongle/dongle_yubikey.c) — YubiKey 后端实现

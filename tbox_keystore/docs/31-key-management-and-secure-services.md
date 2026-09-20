@@ -31,7 +31,7 @@
 │  │  keystore.c 密钥的新建/存储/读取           │                                      │
 │  │  pin_mgr.c    普通 PIN 管理               │                                      │
 │  │  so_pin_mgr.c SO-PIN + 解锁/锁死          │                                      │
-│  │  crypto_ops.c RSA/AES/ECDSA 实际运算      │                                      │
+│  │  crypto_ops.c RSA/AES 实际运算            │                                      │
 │  └──────────────────────────────────────────┘                                      │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -61,7 +61,12 @@ TA 里管这些钥匙的模块叫 `keystore.c`，每把钥匙有：
 
 ## 1.2 谁在操作 TA？—— 那个命令行工具 `keystore_client`
 
-所有管钥匙、用钥匙的动作，都通过 CA 侧的 CLI 工具 `optee_example_tbox_keystore`（源码 `host/keystore_client.c`）发起。它只是"传话的"，真正的判断全在 TA。
+所有管钥匙、用钥匙的动作，都通过 CA 侧的 CLI 工具发起，
+源码是 `host/keystore_client.c`。它只是"传话的"，真正的判断全在 TA。
+
+> **关于工具名**：本文统一写作 `optee_example_tbox_keystore`。
+> 实际产物名由 CMake 项目名决定（`tbox_keystore/CMakeLists.txt` 的
+> `project(...)`），当前是 `keystore`——各脚本里的 `$CLI` / `$TBOX` 变量即指它。
 
 它管钥匙的核心命令长这样（照真实 usage 抄的）：
 
@@ -122,7 +127,7 @@ optee_example_tbox_keystore --verify device-key --data <hex|@file> --sig <hex|@f
 
 ### 1.6.2 dongle 在代码里长什么样
 
-dongle 抽象成一套统一接口，在 `host/dongle/` 目录，接口定义在 `dongle_ops.h`：
+dongle 抽象成一套统一接口，在 `dongle/` 目录，接口定义在 `dongle_ops.h`：
 
 ```c
 struct dongle_ops {
@@ -136,15 +141,22 @@ struct dongle_ops {
 };
 ```
 
-有几种**后端**实现同一套接口，靠 `dongle_detect()` 自动挑：
+有几种**后端**实现同一套接口，都是**插件**——编译成独立的 `.so`，
+CA 在运行时从插件目录 `dlopen` 加载，所以"换后端不用重编 CA"：
 
-| 后端 | 文件 | 是谁 | 用在哪 |
-|------|------|------|--------|
-| **dummy** | `dongle_dummy.c` | 本地一份 **RSA-2048** 密钥文件（模拟狗） | 开发/CI/没硬件的机器（目标机用 `dummy_genkey`，开发机用 `make gen-dummy-key`） |
-| **yubikey** | `dongle_yubikey.c` | 真实 YubiKey，走 `ykman` CLI 或 libykpiv | 产线/真机（真狗） |
-| **factory** | `dongle_factory.c` | 按名字查后端注册表 | 总入口 |
+| 形态 | 文件 / 产物 | 私钥在哪 | 用在哪 |
+|------|------|---------|--------|
+| **本地软狗** | `dongle_dummy.c` → `dummy.so` | 设备上一个密钥文件：`<插件目录>/dummy.key` | 开发 / CI / 离线测试 |
+| **远程签名狗** | `dongle_remote.c` → `remote.so` | **远端**（上位机 / 云端）；设备只持 SSH 身份 | **生产 / 现场售后** |
+| （预留）YubiKey | `dongle_yubikey.c` | 狗内硬件 | 源码保留，**当前不在任何构建中** |
+| 加载器 | `dongle_factory.c` | — | 扫描插件目录、`dlopen`、ABI 校验 |
 
-> 说人话：**同一套"拿狗签名、取狗公钥"的代码，底下接的可以是模拟文件也可以是真 YubiKey**——开发时用 dummy，量产用 YubiKey，业务代码不用改。
+> **"插狗"在软狗上是什么意思**：把 `.so`（驱动）和配套 `.key`（狗内私钥）
+> 放进插件目录（默认 `/usr/lib/tbox/dongle/`）——**放进去 = 插入，拿走 = 拔出**。
+> 远程形态则不需要设备上有 `.key`：私钥始终留在远端。
+
+> 说人话：**同一套"拿狗签名、取狗公钥"的代码，底下接的可以是本地文件、
+> 也可以是一台远端服务器**——业务代码（CA、TA）完全不用改。
 
 ### 1.6.3 SO 解锁的完整流程（两阶段握手）
 
@@ -162,12 +174,15 @@ UNSET ──灌SO-PIN──▶ PROVISIONED ──正常使用/出问题──▶
 # ① 灌装阶段（只能一次）：设 SO-PIN
 optee_example_tbox_keystore --init-so-pin <hex>
 
-# ② 灌装阶段：把某只狗的"公钥"登记进 TA 白名单（can be repeated）
-optee_example_tbox_keystore --provision-dongle --dongle yubikey
-#    或：optee_example_tbox_keystore --provision-dongle-from-file <pub.der>
+# ② 灌装阶段：把某只狗的"公钥"登记进 TA 白名单（可重复，用于多只狗）
+optee_example_tbox_keystore --provision-dongle --dongle dummy
+#    或从文件登记（远程签名狗就是走这条：先取回它的公钥 DER）：
+optee_example_tbox_keystore --provision-dongle-from-file <pub.der>
 
-# ③ 售后：要解锁时，两步走
-optee_example_tbox_keystore --so-unlock --so-pin <hex> --dongle yubikey
+# ③ 售后：要解锁时
+optee_example_tbox_keystore --so-unlock --so-pin <hex> --dongle dummy
+#    远程形态则用 --dongle remote
+#    维护完记得收尾：--so-lock
 ```
 
 TA 内部（`so_pin_mgr.c` 的 `CMD_SO_UNLOCK_REQ` / `CMD_SO_UNLOCK_CONFIRM`）实际做的是**挑战-应答**：
@@ -182,16 +197,25 @@ TA 内部（`so_pin_mgr.c` 的 `CMD_SO_UNLOCK_REQ` / `CMD_SO_UNLOCK_CONFIRM`）�
 
 > 一句话理解这套双因子：**就算有人偷到 SO-PIN，没有白名单里那只狗，照样解不开锁；就算有人偷到狗，不知道 SO-PIN 也白搭。**
 
-### 1.6.4 关于"验签到底在哪验"，有一个必须知道的现状（诚实交代）
+### 1.6.4 验签到底在哪验？——**现在是在 TA 里验的**（缺口已闭合）
 
-这里有个历史包袱（详见 docs/30-ecc-p256-ta-unsupported-debug-log.md 和 docs/28）：
+这里有一段演进史（详见 docs/28 的缺口分析、docs/30 的调试记录）：
 
-- OP-TEE **3.2** 不支持 ECDSA transient object——TA 里一旦 `TEE_AllocateTransientObject(TEE_TYPE_ECDSA_*)` 直接 **panic**。
-- 而 YubiKey 出厂自带的狗钥匙是 **ECDSA P-256**。所以早期方案里"TA 内验 dongle 签名"根本做不了，只能把验签挪到 **CA 侧**（REE，不可信）。
-- 后果：`CMD_SO_UNLOCK_CONFIRM` 目前**只检查"Phase 1 是否成功过"**，验签名/验白名单实际在不可信的 CA 做——攻击者替换 CA 后理论上能绕过狗（安全缺口，docs/28 写得非常坦诚）。
-- **最终方案**（docs/29）：改成让 YubiKey 用 **RSA-2048**（TA 原生支持 RSA 验签），这样 TA 就能在安全世界里"同时"完成 RSA 验签 + 白名单匹配，把缺口闭合。**注意：doc 29 是完整设计，尚未落到代码。**
+- OP-TEE **3.2** 不支持 ECDSA transient object——TA 里一旦
+  `TEE_AllocateTransientObject(TEE_TYPE_ECDSA_*)` 直接 **panic**（docs/30）。
+- 而 YubiKey 出厂自带的狗钥匙恰好是 **ECDSA P-256**。所以**早期**方案里
+  "TA 内验 dongle 签名"根本做不了，只能把验签挪到 **CA 侧**（REE，不可信）。
+  那时的 `CMD_SO_UNLOCK_CONFIRM` 是个**无参空壳**，只检查"Phase 1 是否成功过"——
+  **攻击者替换 CA 就能绕过狗**。这是一个被坦诚记录下来的安全缺口（docs/28）。
+- ✅ **现在（已实施）**：密钥改用 **RSA-2048**（OP-TEE 3.2 原生支持），
+  TA 在 `so_unlock_confirm()` 内**原子完成**「RSA 验签 ∧ 白名单匹配」；
+  CA 只负责把「狗的公钥 + 狗的签名」递进去，**不参与任何判定**。
 
-所以文档和代码要对照着看：**想理解"设计上的双因子"看 docs/29；想看"现在代码实际做到的"看 `so_pin_mgr.c` + docs/28。**
+**一句话判据**：改造后，即使 CA 被替换、攻击者也知道 SO-PIN，
+只要没有白名单里的那只狗，TA 一律拒绝 → **缺口闭合**。
+
+> 实现见 `ta/so_pin_mgr.c` 的 `so_unlock_confirm()` 与 `ta/crypto_ops.c` 的
+> `rsa_import_pubkey_from_der()`；设计见 docs/32 §8；RSA 版完整方案 docs/29。
 
 ## 1.7 钥匙管理全景小结（依赖关系图）
 
@@ -209,10 +233,13 @@ TA 内部（`so_pin_mgr.c` 的 `CMD_SO_UNLOCK_REQ` / `CMD_SO_UNLOCK_CONFIRM`）�
      ├─▶ libteec ──▶ ta/entry.c（命令分发 + 门禁）
      │                   ├─▶ ta/pin_mgr.c    普通 PIN
      │                   ├─▶ ta/so_pin_mgr.c SO-PIN/解锁/白名单/状态机
+     │                   │      └─▶ ta/crypto_ops.c  rsa_import_pubkey_from_der()
      │                   ├─▶ ta/keystore.c   持久化密钥(安全存储)
      │                   └─▶ ta/acl.c + ta/crypto_ops.c  权限 + 运算
-     └─▶ host/dongle/dongle_factory.c ──▶ dongle_dummy.c / dongle_yubikey.c
-                     （模拟狗 / 真 YubiKey，都实现 dongle_ops.h 那套接口）
+     └─▶ dongle/dongle_factory.c（插件加载器，**链进 CA**）
+             └─ dlopen ──▶ dongle/dummy.so      本地软狗（<插件目录>/dummy.key）
+                       └─▶ dongle/remote.so     远程签名狗（SSH 到上位机/云端）
+                       两个插件都只实现 dongle_ops.h 那套接口，对 CA 零依赖
 ```
 
 ---
@@ -353,7 +380,9 @@ ENGINE 里那些 `CMD_SIGN/CMD_VERIFY/CMD_RSA_DECRYPT`，最终都由 TA 的 `cr
             └────────────────────────┘
 
   密钥来源：host/keystore_client.c (CLI) 造钥匙、灌 PIN、lock
-            host/dongle/* (dongle 抽象层) 解锁用：dummy(开发)/yubikey(量产)
+            dongle/ (dongle 子系统，插件) 解锁用：
+              dummy.so   本地软狗（开发/CI）
+              remote.so  远程签名狗（生产/现场，私钥在远端）
 ```
 
 **三句话总结：**
@@ -372,8 +401,9 @@ ENGINE 里那些 `CMD_SIGN/CMD_VERIFY/CMD_RSA_DECRYPT`，最终都由 TA 的 `cr
 - HTTPS 客户端示例：[17-https-client-demo.md](17-https-client-demo.md) / `examples/https_client/`
 - MQTTS 双向认证示例：[18-mqtt-mutual-auth-demo.md](18-mqtt-mutual-auth-demo.md) / [20-mqtts-debug-issues.md](20-mqtts-debug-issues.md) / `examples/mqtts/`
 - 多进程并发问题：[16-multi-process-concurrency-analysis.md](16-multi-process-concurrency-analysis.md)
-- SO-PIN + dongle 设计：[24-so-pin-yubikey-unlock.md](24-so-pin-yubikey-unlock.md)
-- **当前代码实际做到哪**（含安全缺口坦诚分析）：[28-yubikey-full-lifecycle.md](28-yubikey-full-lifecycle.md)
-- **最终方案（未落码）RSA-2048 + 可信服务器**：[29-rsa-yubikey-provisioning.md](29-rsa-yubikey-provisioning.md)
+- **dongle 可插拔的完整设计（本地软狗 + 远程签名狗）**：[32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md)
+- SO-PIN + dongle 设计（ECDSA 版历史）：[24-so-pin-yubikey-unlock.md](24-so-pin-yubikey-unlock.md)
+- **安全缺口的历史分析**（该缺口现已闭合，本文 §1.6.4）：[28-yubikey-full-lifecycle.md](28-yubikey-full-lifecycle.md)
+- RSA-2048 方案（**已实施**，TA 内原子验签）：[29-rsa-yubikey-provisioning.md](29-rsa-yubikey-provisioning.md)
 - TA 不支持 ECDSA P-256 验签的调试记录：[30-ecc-p256-ta-unsupported-debug-log.md](30-ecc-p256-ta-unsupported-debug-log.md)
 - 产品说明书：[21-product-manual.md](21-product-manual.md)

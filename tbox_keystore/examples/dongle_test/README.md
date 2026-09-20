@@ -34,10 +34,10 @@
 
 | 文件 | 覆盖内容 | 程度 |
 |------|---------|:--:|
-| `host/dongle/dongle_ops.h` | 接口定义：caps 宏、函数指针表、工厂函数声明 | 全部 |
-| `host/dongle/dongle_factory.c` | `dongle_get()` 按名查找、`dongle_detect()` 自动检测、注册表遍历 | 全部 |
-| `host/dongle/dongle_dummy.c` | `probe()` / `open()` / `close()` / `sign()` / `get_pubkey()` / `get_serial()` / `get_attr()` | 全部 |
-| `host/dongle/dongle_yubikey.c` | `dongle_yubikey_get_ops()` weak symbol 注册，内部 `yk_*` 函数**未执行**（无硬件） | 仅链接 |
+| `dongle/dongle_ops.h` | 接口定义：caps 宏、函数指针表、工厂函数声明 | 全部 |
+| `dongle/dongle_factory.c` | `dongle_get()` 按名查找、`dongle_detect()` 自动检测、注册表遍历 | 全部 |
+| `dongle/dongle_dummy.c` | `probe()` / `open()` / `close()` / `sign()` / `get_pubkey()` / `get_serial()` / `get_attr()` | 全部 |
+| `dongle/dongle_yubikey.c` | `dongle_yubikey_get_ops()` weak symbol 注册，内部 `yk_*` 函数**未执行**（无硬件） | 仅链接 |
 
 ### 构建
 
@@ -250,13 +250,13 @@ chmod +x test_so_lifecycle.sh
 | 依赖 | `dongle_test` | `test_so_lifecycle.sh` |
 |------|:--:|:--:|
 | OpenSSL dev | ✓ | — |
-| Dongle source files | ✓ (`../../host/dongle/`) | — |
+| Dongle source files | ✓ (`../../dongle/`) | — |
 | TEE + TA | — | ✓ |
 | tbox_keystore | — | ✓ |
 | Dummy key file | — | ✓ |
 
 ## 相关文档
 
-- [host/dongle/dongle_ops.h](../../host/dongle/dongle_ops.h) — dongle 统一接口
+- [dongle/dongle_ops.h](../../dongle/dongle_ops.h) — dongle 统一接口
 - [docs/24-so-pin-yubikey-unlock.md](../../docs/24-so-pin-yubikey-unlock.md) — SO-PIN 设计文档
 - [docs/09-pin-management.md](../../docs/09-pin-management.md) — Provisioning PIN 管理

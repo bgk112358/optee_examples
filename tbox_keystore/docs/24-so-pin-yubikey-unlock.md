@@ -489,10 +489,10 @@ TEE_Result crypto_ecdsa_verify(
 
 ### 6.1 Dongle 抽象层
 
-CA 通过 `struct dongle_ops` 统一接口表操作 dongle，不感知底层品牌。代码位置：`host/dongle/`。
+CA 通过 `struct dongle_ops` 统一接口表操作 dongle，不感知底层品牌。代码位置：`dongle/`。
 
 ```
-host/dongle/
+dongle/
 ├── dongle_ops.h          # 统一接口头文件 (struct dongle_ops)
 ├── dongle_factory.c      # 后端注册 + 自动检测
 ├── dongle_yubikey.c      # YubiKey 实现 (ykman CLI / libykpiv)
@@ -500,7 +500,7 @@ host/dongle/
 └── (deps: libykpiv / ykman CLI / OpenSSL)
 ```
 
-**统一接口**（详见 `host/dongle/dongle_ops.h`）：
+**统一接口**（详见 `dongle/dongle_ops.h`）：
 
 ```c
 struct dongle_ops {

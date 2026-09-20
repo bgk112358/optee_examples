@@ -7,7 +7,7 @@ project(dongle_test C)
 # aarch64 and would fail to link here.
 find_package(OpenSSL REQUIRED)
 
-set(DONGLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../host/dongle")
+set(DONGLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../dongle")
 
 # ---- The dummy backend, built as a PLUGIN ----
 # The test no longer links backends in: it drives them through the same

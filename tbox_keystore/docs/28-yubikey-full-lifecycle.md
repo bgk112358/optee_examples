@@ -1,5 +1,22 @@
 # 28 — YubiKey 在 SO 解锁流程中的端到端使用
 
+> ## ⚠️ 实施状态：文中描述的"缺口"**现已闭合**（保留作历史分析）
+>
+> 本文是**当时的缺口分析**，写于缺口尚存之时。其中的 §2.3「ECDSA 签名原理
+> （设计意图 vs 当前实现）」、§3「当前实现的缺口」、以及文末结论
+> **描述的是修复前的状态**，现在已不成立：
+>
+> | 本文当时说的 | 现在的实际情况 |
+> |---|---|
+> | TA 的 `CMD_SO_UNLOCK_CONFIRM` **无参数、不验签、不查白名单** | 已加 `pubkey_der` + `sig_der` 参数，TA 内**原子完成 RSA 验签 ∧ 白名单匹配** |
+> | 验签在**不可信的 CA 侧**（`ECDSA_do_verify`） | CA 不再验签，只转发；判定全在 TA |
+> | 攻击者替换 CA 即可绕过 YubiKey | 替换 CA 也不再能绕过（缺公钥/不在白名单 → TA 拒绝） |
+> | "需 OP-TEE ECDSA 支持才能闭合" | 改用 **RSA-2048** 就闭合了，无需等 OP-TEE 升级 |
+>
+> 闭合的实现：`ta/so_pin_mgr.c` 的 `so_unlock_confirm()`；
+> 设计与阶段见 [32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md) §8（P2）。
+> 通俗版说明见 [31](31-key-management-and-secure-services.md) §1.6.4。
+
 ## 摘要
 
 本文档描述 YubiKey 在 TBox 安全体系中的**完整使用闭环**——从采购到灌装到现场 SO 解锁。

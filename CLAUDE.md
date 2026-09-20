@@ -28,12 +28,15 @@ optee_examples_AG519M/tbox_keystore/
 │   └── sub.mk             # 源文件清单（新增 .c 要加这里）
 ├── host/                  # CA 客户端（REE）
 │   ├── keystore_client.c  # CLI 工具（含 SO 命令）
-│   ├── dongle/            # dongle 抽象层
-│   │   ├── dongle_ops.h   # 统一接口
-│   │   ├── dongle_factory.c
-│   │   ├── dongle_dummy.c # 模拟 dongle（本地 P-256 密钥文件）
-│   │   └── dongle_yubikey.c # YubiKey 后端（ykman CLI fallback）
-│   └── Makefile           # DONGLE_BACKENDS 条件编译
+│   └── Makefile           # CMake 薄包装（make / make plugins / gen-dummy-key）
+├── dongle/                # dongle 子系统（独立于 CA，自带 CMakeLists）
+│   ├── CMakeLists.txt     # 插件构建：dummy.so / remote.so / dummy_genkey
+│   ├── dongle_ops.h       # 插件 ABI 契约（CA 与插件共享）
+│   ├── dongle_factory.c   # 插件加载器（**链进 CA**，本身不是插件）
+│   ├── dongle_dummy.c     # 本地软狗插件（RSA-2048）
+│   ├── dongle_remote.c    # 远程签名狗插件（SSH）
+│   ├── dongle_yubikey.c   # **未构建**（源码保留，文件头注明原因与回归方式）
+│   └── remote.conf.example
 ├── engine/                # OpenSSL ENGINE (e_tbox_keystore.c)
 ├── examples/              # 各示例（见下方「examples 目录」）
 ├── remote-signer/         # 远端签名服务（Python，跑在上位机/云端）— docs/32 P1
@@ -50,7 +53,7 @@ optee_examples_AG519M/tbox_keystore/
    - 失败计数器：连续 3 次错 PIN → 60s 冷却；累计 1000 次 → 永久 BRICKED
    - `test_so_lifecycle.sh` 全流程通过（灌装→锁定→SO解锁→重锁→错误路径）
 
-2. **dongle 抽象层**（`host/dongle/`）
+2. **dongle 抽象层**（`dongle/`）
    - `dongle_ops` 统一接口 + factory 自动检测（YubiKey → Dummy）
    - `dongle_test` 单元测试 9 项全通过
 
@@ -154,7 +157,7 @@ optee_examples_AG519M/tbox_keystore/
 - **REE FS 并发**：OP-TEE 3.2 REE FS 同 session reopen 会 ACCESS_CONFLICT，需 session 级缓存
 - **`sed` 改 C 代码易破坏**：本项目多次因 sed 插行破坏 if/else 块、多行函数调用。**改 C 代码用 Read + Edit/Write，不要用 sed**
 - **TA 源文件清单**：新增 .c 必须加到 `ta/sub.mk`
-- **CMakeLists 两个**：顶层 `optee_examples_AG519M/CMakeLists.txt`（含 teec include/lib 路径）和 `tbox_keystore/CMakeLists.txt`
+- **CMakeLists 三个**：顶层 `optee_examples_AG519M/CMakeLists.txt`（含 teec include/lib 路径）、`tbox_keystore/CMakeLists.txt`（CA，`add_subdirectory(dongle)`）、`dongle/CMakeLists.txt`（插件，可独立配置）
 - **公钥/私钥格式**：RSA-2048 公钥 DER 约 294 字节；P-256 约 91 字节
 
 ## 文档索引

@@ -41,7 +41,7 @@
 
 #include <tee_client_api.h>
 #include "tbox_keystore_ta.h"
-#include "dongle/dongle_ops.h"
+#include "dongle_ops.h"		/* the dongle contract (dongle/, via -I) */
 
 /* GP TEE / OP-TEE error codes not in libteec headers */
 #define TEEC_ERROR_OVERFLOW       0xFFFF000F  /* TEE_ERROR_OVERFLOW */

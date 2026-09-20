@@ -6,7 +6,7 @@
 > **状态**：设计/实施方案。**P1–P10 全部完成**（远端签名服务、TA 内验签、CA 配合、
 > 插件框架、本地软狗插件化、远程签名狗插件、白名单/限频/审计、构建收敛、
 > 云端 transport 接口预留、文档同步）。
-> 代码见 [remote-signer/](../remote-signer/)、`ta/`（§8）、`host/dongle/`。
+> 代码见 [remote-signer/](../remote-signer/)、`ta/`（§8）、`dongle/`。
 > 唯一未实现的是 **云端 transport 本体**（接口与配置已就位，见 §7.4 / P9）。
 >
 > ✅ **两种 dongle 形态均可用了**：本地软狗（`dummy.so` + `<dir>/dummy.key`）
@@ -30,7 +30,7 @@
 ### 1.1 现有 dongle 抽象层
 
 ```
-host/dongle/
+dongle/
 ├── dongle_ops.h        # 统一接口（虚表）
 ├── dongle_factory.c    # 静态注册表 + 弱符号 + detect/get
 ├── dongle_dummy.c      # 软狗：本地 RSA-2048 密钥文件
@@ -184,7 +184,7 @@ struct dongle_ops {
 
 ## 5. 插件 ABI 契约
 
-容器放在 `host/dongle/dongle_ops.h`。
+容器放在 `dongle/dongle_ops.h`。
 
 ### 5.1 ABI 版本号
 
@@ -394,7 +394,7 @@ remote.so
 
 ### 7.6 配置
 
-完整样例见 [host/dongle/remote.conf.example](../../host/dongle/remote.conf.example)，
+完整样例见 [dongle/remote.conf.example](../../dongle/remote.conf.example)，
 部署到 `/etc/tbox/dongle/remote.conf`。
 
 查找顺序：`$TBOX_REMOTE_DONGLE_CONF` → `<插件目录>/remote.conf` → 上述默认路径。
@@ -604,13 +604,15 @@ RSA-2048 公钥 DER ≈ **294 字节**、签名 **256 字节**，会在以下三
 
 | 文件 | 改动 | 类别 |
 |------|------|:--:|
-| `host/dongle/dongle_ops.h` | +ABI 版本、+入口符号声明、`struct dongle_ops` +`priority`/`key_type`、`sign()` 语义改 RSA | 框架 |
-| `host/dongle/dongle_factory.c` | **重写**：静态注册表 → `dlopen` 加载器（公开 API 不变） | 框架 |
-| `host/dongle/dongle_dummy.c` | RSA-2048 + 导出符号 + 密钥路径 | 本地软狗 |
-| `host/dongle/dongle_remote.c` | **新增**：远程签名狗插件 + transport 抽象 | 远程狗 |
-| `host/dongle/dongle_yubikey.c` | **从构建移除**（源码保留，可后续做成插件回归） | 清理 |
-| `host/keystore_client.c` | `do_so_unlock()` 改为传 pubkey+sig；**缓冲区 256→512**（公钥/签名，见 §8.6） | CA |
-| `host/Makefile` | 删 `DONGLE_BACKENDS`；`-lssl -lcrypto` **移到无条件**；+`-ldl`；+插件目标 | 构建 |
+| `dongle/dongle_ops.h` | +ABI 版本、+入口符号声明、`struct dongle_ops` +`priority`/`key_type`、`sign()` 语义改 RSA | 框架 |
+| `dongle/dongle_factory.c` | **重写**：静态注册表 → `dlopen` 加载器（公开 API 不变） | 框架 |
+| `dongle/dongle_dummy.c` | RSA-2048 + 导出符号 + 密钥路径 | 本地软狗 |
+| `dongle/dongle_remote.c` | **新增**：远程签名狗插件 + transport 抽象 | 远程狗 |
+| `dongle/dongle_yubikey.c` | **从构建移除**（源码保留，可后续做成插件回归） | 清理 |
+| `host/keystore_client.c` | `do_so_unlock()` 改为传 pubkey+sig；**缓冲区 256→512**（公钥/签名，见 §8.6）；include 改 `"dongle_ops.h"`（走 `-I`） | CA |
+| `host/Makefile` | **收敛为 CMake 薄包装**（`make` / `make plugins` / `gen-dummy-key`）——不再自带编译规则，消除"两套构建定义" | 构建 |
+| **`dongle/CMakeLists.txt`** | **新增**：编 `dummy.so` / `remote.so` / `dummy_genkey`；可独立配置，也被父工程 `add_subdirectory` | 构建 |
+| `tbox_keystore/CMakeLists.txt` | `add_subdirectory(dongle)`；CA 仍链接 `dongle/dongle_factory.c`（加载器） | 构建 |
 | `ta/include/tbox_keystore_ta.h` | `CMD_SO_UNLOCK_CONFIRM`(18) 参数说明更新 | TA |
 | `ta/so_pin_mgr.c` | `so_unlock_confirm()` 改为原子验签+白名单；**`so_provision_dongle()` 公钥长度上限 256→512**（见 §8.6） | TA |
 | `ta/crypto_ops.c` | +`rsa_import_pubkey_from_der()` | TA |
@@ -621,11 +623,37 @@ RSA-2048 公钥 DER ≈ **294 字节**、签名 **256 字节**，会在以下三
 | **远端** `tbox-dongle-sign`（新仓库/目录） | Python 服务 + 设备白名单 + 审计日志 | 远端 |
 | `docs/24-so-pin-yubikey-unlock.md` | 涉及 dongle 加载方式与验签位置的段落 | 文档 |
 
-### ⚠️ 一个容易踩的坑（构建）
+### 目录重组：dongle 层从 `host/` 提出来（方案 A）
 
-现在 `-lssl -lcrypto` 写在 `host/Makefile` 的 `ifeq (dummy)` 分支内，
-但 [keystore_client.c](../../host/keystore_client.c) **本身就依赖 OpenSSL**。
-删掉 dummy 静态分支后，主程序会**缺 OpenSSL 而链接失败** → 必须把该依赖**提升为无条件**。
+改造完成后 `host/dongle/` 被整体上提为 `tbox_keystore/dongle/`：
+
+```
+tbox_keystore/
+├── host/          # 只剩 CA：keystore_client.c + Makefile
+└── dongle/        # dongle 子系统（自带 CMakeLists，可独立构建）
+    ├── dongle_ops.h        # 插件 ABI 契约 —— CA 与插件**共享**
+    ├── dongle_factory.c    # 插件加载器 —— **链进 CA**（不是插件）
+    ├── dongle_dummy.c      # 插件：本地软狗
+    ├── dongle_remote.c     # 插件：远程签名狗
+    └── dongle_yubikey.c    # 未构建
+```
+
+**一句话说明边界**：`dongle/` 里除 `dongle_factory.c` 外都是**独立 `.so`**，
+对 CA 零依赖；`dongle_factory.c` 逻辑上属于这一层，但必须被**链进 CA**——
+因为要由 CA 来 `dlopen` 插件。CA 与插件之间唯一的耦合面就是 `dongle_ops.h`。
+
+> 产物位置（CMake `add_subdirectory` 的常态）：
+> CA 在 `build/tbox_keystore/keystore`，插件与 `dummy_genkey` 在
+> `build/tbox_keystore/dongle/`。目标名不变，`make dummy_plugin` 等照旧可用。
+
+### ⚠️ 原"容易踩的坑"的最终处置
+
+计划里曾担心 `host/Makefile` 的 `ifeq (dummy)` 分支删掉后 CA 会缺 OpenSSL。
+最终没有采用"打补丁"的方式，而是**把 Makefile 收敛成 CMake 薄包装**——
+根因是当时存在**两套构建定义**（Makefile 与 CMake 各写一份），
+它同时导致了两个 bug：`CC ?=` 对 make 内建变量无效（总是用宿主 `cc`，
+接着链 aarch64 libteec 失败）、以及从未指向交叉 OpenSSL。
+现在构建定义只剩 CMake 一处，这两个问题连同"依赖提升"的顾虑一起消失。
 
 ---
 
@@ -805,5 +833,5 @@ $CLI --so-lock                              # 收尾：锁回（见 §6.5 注意
 - [29-rsa-yubikey-provisioning.md](29-rsa-yubikey-provisioning.md) — **RSA-2048 + TA 内原子验签**的完整设计（§8 直接复用）
 - [30-ecc-p256-ta-unsupported-debug-log.md](30-ecc-p256-ta-unsupported-debug-log.md) — 为什么 ECDSA 不能在 TA 内验签
 - [31-key-management-and-secure-services.md](31-key-management-and-secure-services.md) — 钥匙管理与安全能力总述（dongle 角色）
-- [host/dongle/dongle_ops.h](../../host/dongle/dongle_ops.h) — 当前接口定义
+- [dongle/dongle_ops.h](../../dongle/dongle_ops.h) — 当前接口定义
 - [examples/dongle_test/README.md](../../examples/dongle_test/README.md) — dongle 单元测试说明

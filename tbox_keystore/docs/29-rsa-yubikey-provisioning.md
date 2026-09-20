@@ -1,16 +1,19 @@
 # 29 — 基于 YubiKey RSA-2048 的产线灌装与 SO 解锁完整方案
 
-> ## ⚠️ 实施状态：方案已定，代码未落
+> ## ⚠️ 实施状态：核心设计已实施（部分机制除外）
 >
-> **本文是设计文档，尚未实施到代码。** 文中描述的 TA 内"RSA 验签 + 白名单匹配"、
-> `CMD_SO_UNLOCK_CONFIRM` 带 `pubkey+sig` 参数、`CMD_PROVISION_DONGLE_MANIFEST`(19) 等
-> **全部还未落地**（以 QEMU 分支为准，真机分支跟随 QEMU）。
+> **本文核心已被采纳并落地**（以 QEMU 分支为准，真机分支跟随 QEMU）：
 >
-> 当前代码实际是：dongle 为 **P-256**、验签在 **CA 侧**（`ECDSA_do_verify`）、
-> TA 的 `CMD_SO_UNLOCK_CONFIRM` **无参数且不验签** → [doc 28](28-yubikey-full-lifecycle.md)
-> 描述的**安全缺口依然存在**。
+> | 本文的机制 | 现状 |
+> |---|---|
+> | **改用 RSA-2048 替代 ECDSA P-256** | ✅ 已实施（本地软狗、远程签名狗都是 RSA-2048） |
+> | TA 内 `CMD_SO_UNLOCK_CONFIRM` 带 `pubkey+sig` 参数 | ✅ 已实施 |
+> | TA 内**原子完成** RSA 验签 ∧ 白名单匹配 | ✅ 已实施——[doc 28](28-yubikey-full-lifecycle.md) 描述的**缺口已闭合** |
+> | `rsa_import_pubkey_from_der()` | ✅ 已实施（`ta/crypto_ops.c`） |
+> | **`CMD_PROVISION_DONGLE_MANIFEST`(19) 批量 manifest 灌装** | ❌ **未实现**（目前是逐条登记 `CMD_PROVISION_DONGLE`） |
+> | **YubiKey 作为设备端硬件狗** | ❌ 当前不在构建中（`dongle_yubikey.c` 源码保留）；设备端现支持 `dummy.so` / `remote.so` 两种插件 |
 >
-> 实施计划见 [32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md) §8 与本文 §7.3。
+> 实施记录见 [32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md) §8（P2/§7.3 为本文对应设计）。
 
 ## 概述
 
