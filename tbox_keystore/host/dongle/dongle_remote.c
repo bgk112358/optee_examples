@@ -49,7 +49,10 @@
  * test point ssh_bin at a local mock).
  */
 struct remote_cfg {
-	char transport[32];
+	/* --- transport selection --- */
+	char transport[32];	/* "ssh" (implemented) | "http_mtls" (reserved) */
+
+	/* --- ssh transport --- */
 	char ssh_bin[256];	/* not always "ssh": dropbear is "dbclient" */
 	char host[256];
 	char user[128];
@@ -58,6 +61,15 @@ struct remote_cfg {
 	char known_hosts[512];
 	int  timeout_ms;
 	char remote_cmd[256];	/* remote helper, invoked via ssh */
+
+	/* --- http_mtls transport (cloud) — PARSED but NOT implemented (P9) ---
+	 * Parsed already so that a config written for the cloud form is not
+	 * silently half-understood: unknown keys would otherwise be dropped
+	 * without a trace.  See docs/32 §7.4 / §7.6.
+	 */
+	char endpoint[256];	/* https://ca.example.com/v1/dongle */
+	char client_cert[512];	/* device certificate for mutual TLS */
+	char client_key[512];	/* its private key */
 };
 
 static struct remote_cfg g_cfg;
@@ -95,6 +107,10 @@ static void cfg_set_kv(const char *k, const char *v)
 	else if (!strcmp(k, "known_hosts")) str_set(g_cfg.known_hosts, sizeof(g_cfg.known_hosts), v);
 	else if (!strcmp(k, "timeout_ms"))  g_cfg.timeout_ms = atoi(v);
 	else if (!strcmp(k, "remote_cmd"))  str_set(g_cfg.remote_cmd, sizeof(g_cfg.remote_cmd), v);
+	/* cloud (http_mtls) — reserved, parsed so nothing is silently dropped */
+	else if (!strcmp(k, "endpoint"))    str_set(g_cfg.endpoint, sizeof(g_cfg.endpoint), v);
+	else if (!strcmp(k, "client_cert")) str_set(g_cfg.client_cert, sizeof(g_cfg.client_cert), v);
+	else if (!strcmp(k, "client_key"))  str_set(g_cfg.client_key, sizeof(g_cfg.client_key), v);
 	/* unknown keys ignored: forward compatibility */
 }
 
@@ -168,6 +184,9 @@ static void cfg_load(void)
 	cfg_env_override("KNOWN_HOSTS", "known_hosts");
 	cfg_env_override("TIMEOUT_MS", "timeout_ms");
 	cfg_env_override("CMD", "remote_cmd");
+	cfg_env_override("ENDPOINT", "endpoint");
+	cfg_env_override("CLIENT_CERT", "client_cert");
+	cfg_env_override("CLIENT_KEY", "client_key");
 }
 
 /* ---- Process helper: run argv, capture stdout, enforce a timeout ---- */
@@ -300,8 +319,10 @@ static int transport_ssh_call(const char *subcmd, const char *arg,
 	char opt_kh[600];
 	int n = 0;
 
-	if (!g_cfg.host[0])
-		return -2;	/* not configured */
+	if (!g_cfg.host[0]) {
+		fprintf(stderr, "[remote] ssh: host not configured (%s)\n", cfg_path());
+		return -2;
+	}
 
 	snprintf(opt_timeout, sizeof(opt_timeout), "ConnectTimeout=%d",
 		 g_cfg.timeout_ms > 0 ? (g_cfg.timeout_ms + 999) / 1000 : 2);
@@ -342,12 +363,31 @@ static int transport_ssh_call(const char *subcmd, const char *arg,
 	return run_capture(argv, out, out_max, g_cfg.timeout_ms);
 }
 
-/* Cloud transport — interface reserved, not implemented this phase (§7.4) */
+/*
+ * Cloud transport — INTERFACE RESERVED, NOT IMPLEMENTED (docs/32 §7.4 / P9).
+ *
+ * The vtable slot and the config keys (endpoint / client_cert / client_key)
+ * exist so that the cloud form can be dropped in later without touching the
+ * callers: implementing it means filling in this function (an HTTPS client
+ * with mutual TLS) and nothing else.
+ *
+ * It fails loudly rather than silently succeeding: a misconfigured device
+ * must not look like "no dongle".
+ */
 static int transport_http_mtls_call(const char *subcmd, const char *arg,
 				    char *out, size_t out_max)
 {
 	(void)subcmd; (void)arg;
-	snprintf(out, out_max, "http_mtls transport not implemented");
+
+	fprintf(stderr,
+		"[remote] transport 'http_mtls' is RESERVED, not implemented yet "
+		"(docs/32 §7.4 / P9).\n"
+		"         Use transport=ssh for now.\n");
+	if (!g_cfg.endpoint[0])
+		fprintf(stderr, "         (endpoint is not set either.)\n");
+
+	if (out && out_max)
+		snprintf(out, out_max, "http_mtls not implemented");
 	return -3;
 }
 
@@ -361,7 +401,8 @@ static const struct transport *transport_get(void)
 		return &g_transport_ssh;
 	if (!strcmp(g_cfg.transport, "http_mtls"))
 		return &g_transport_http;
-	fprintf(stderr, "[remote] unknown transport '%s'\n", g_cfg.transport);
+	fprintf(stderr, "[remote] unknown transport '%s' (valid: ssh, http_mtls)\n",
+		g_cfg.transport);
 	return NULL;
 }
 
@@ -403,10 +444,8 @@ static int remote_probe(void)
 
 	if (!t)
 		return 0;
-	if (!g_cfg.host[0]) {
-		fprintf(stderr, "[remote] no host configured (%s)\n", cfg_path());
-		return 0;
-	}
+	/* config validation belongs to the transport (ssh needs host, cloud
+	 * needs endpoint) — see transport_*_call() */
 	if (t->call("ping", NULL, out, sizeof(out)) != 0)
 		return 0;
 	return strcmp(out, "OK") == 0;
@@ -424,10 +463,6 @@ static int remote_open(struct dongle_ctx **ctx_out)
 
 	if (!t)
 		return -1;
-	if (!g_cfg.host[0]) {
-		fprintf(stderr, "[remote] no host configured (%s)\n", cfg_path());
-		return -1;
-	}
 
 	rc = t->call("getpub", NULL, out, sizeof(out));
 	if (rc != 0) {

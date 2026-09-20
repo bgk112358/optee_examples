@@ -3,18 +3,19 @@
 > **一句话**：把 dongle 后端从"编译期静态链接"改成"运行期插件"，并支持两种形态——
 > **本地软狗**（`.so` + 本地 `.key`，开发/CI）与 **远程签名狗**（`.so` 在设备、**私钥在远端**，通过 SSH 请求签名，生产/现场）。
 >
-> **状态**：设计/实施方案。**P1–P7 已实现**（远端签名服务、TA 内验签、CA 配合、
-> 插件框架、本地软狗插件化、远程签名狗插件、白名单/限频/审计），仅 P8/P9/P10 未完成。
-> 已实现部分见 [remote-signer/](../remote-signer/)、`ta/`（§8）、`host/`。
+> **状态**：设计/实施方案。**P1–P10 全部完成**（远端签名服务、TA 内验签、CA 配合、
+> 插件框架、本地软狗插件化、远程签名狗插件、白名单/限频/审计、构建收敛、
+> 云端 transport 接口预留、文档同步）。
+> 代码见 [remote-signer/](../remote-signer/)、`ta/`（§8）、`host/dongle/`。
+> 唯一未实现的是 **云端 transport 本体**（接口与配置已就位，见 §7.4 / P9）。
 >
 > ✅ **两种 dongle 形态均可用了**：本地软狗（`dummy.so` + `<dir>/dummy.key`）
 > 与远程签名狗（`remote.so` + SSH 到上位机/云端，含每设备身份、白名单、限频、审计）。
 >
-> **迁移中的已知破损**（属后续阶段范围，暂不修）：
-> - `examples/dongle_test/`（**C 单元测试**）— 仍按 P-256/ECDSA 断言，**会失败**；
->   P8 改为加载 `dummy.so` 时一并适配（`test_so_lifecycle.sh` 已适配，可用）
-> - `host/dongle/dongle_yubikey.c` — 产 ECDSA 签名，**TA 现已拒收**；P8 移除
-> - `host/Makefile` — `CC ?=` 对 make 内建变量无效（实际构建走 CMake）；P8 一并修
+> ✅ **P8 已清掉全部"迁移中破损"**（见下方修订，此前记账的三项均已修复）：
+> - `examples/dongle_test/` → 改为经**插件加载器**驱动，RSA-2048 断言，**9/9 通过**
+> - `dongle_yubikey.c` → 不再编入构建，源码保留并在文件头注明**为何不可用**及**如何作为插件回归**
+> - `host/Makefile` → 收敛为 **CMake 薄包装**（原 `CC ?=` 失效、缺交叉 OpenSSL 路径两个 bug 一并消除）
 >
 > **分支策略**：**以 QEMU 分支为准**（本工作区即 QEMU 分支）。先在 QEMU 验证通过，再移植到真机分支。
 >
@@ -393,25 +394,36 @@ remote.so
 
 ### 7.6 配置
 
-```
-/etc/tbox/dongle/remote.conf
+完整样例见 [host/dongle/remote.conf.example](../../host/dongle/remote.conf.example)，
+部署到 `/etc/tbox/dongle/remote.conf`。
 
-transport   = ssh
+查找顺序：`$TBOX_REMOTE_DONGLE_CONF` → `<插件目录>/remote.conf` → 上述默认路径。
+
+```
+transport   = ssh                     # ssh（已实现） | http_mtls（预留）
 host        = signer.example.com
 user        = tbox-device
 port        = 22
-key         = /etc/tbox/dongle/id_ed25519
-known_hosts = /etc/tbox/dongle/known_hosts
+key         = /etc/tbox/dongle/id_ed25519   # 本设备专属 SSH 身份（§7.5）
+known_hosts = /etc/tbox/dongle/known_hosts  # 必须预置（强制校验主机密钥）
+ssh_bin     = ssh                     # 嵌入式常为 dropbear 的 dbclient
 timeout_ms  = 2000
+remote_cmd  = tbox-dongle-sign
 
-# 预留（本期不实现）
-# transport   = https
+# --- 云端（预留，P9）：字段**会被解析**，但传输层未实现 ---
+# transport   = http_mtls
 # endpoint    = https://ca.example.com/v1/dongle
 # client_cert = /etc/tbox/dongle/device.crt
 # client_key  = /etc/tbox/dongle/device.key
 ```
 
-环境变量可覆盖（便于开发）：`TBOX_REMOTE_DONGLE_HOST` 等。
+环境变量可覆盖任一键（便于开发/CI）：`TBOX_REMOTE_DONGLE_<KEY>`，例如
+`TBOX_REMOTE_DONGLE_HOST` / `TBOX_REMOTE_DONGLE_TIMEOUT_MS` / `TBOX_REMOTE_DONGLE_ENDPOINT`。
+
+> **P9 的"预留"具体指什么**：`http_mtls` 的 vtable 槽位与全部配置键**都已就位**；
+> 选它会**明确报错**（`RESERVED, not implemented yet`）而**不会静默成功**——
+> 配置错的设备绝不能看起来像"没插狗"。实现云端只需填
+> `transport_http_mtls_call()` 一个函数，调用方无需改动。
 
 ### 7.7 远端服务（Ubuntu + Python）
 
@@ -655,9 +667,9 @@ RSA-2048 公钥 DER ≈ **294 字节**、签名 **256 字节**，会在以下三
 | **P5** ✅ | 本地软狗插件化（RSA + 导出符号 + `.so`）；密钥路径规则 §6.3 | 插入/拔出用例 |
 | **P6** ✅ | 远程签名狗插件（`remote.so` + transport_ssh + 配置 + probe 超时） | 远端可达/不可达用例 |
 | **P7** ✅ | 每设备 SSH 身份 + 远端白名单/限频 + 审计日志（含查看入口） | 审计日志可查 |
-| **P8** | 构建改造、移除 yubikey 静态路径、`dongle_test` 适配 | `make` + 测试全绿 |
-| **P9** | 云端 transport 接口预留（`transport_http_mtls` 空实现 + 配置项） | 编译通过 |
-| **P10** | 文档与脚本同步 | 人工复核 |
+| **P8** ✅ | 构建改造、移除 yubikey 静态路径、`dongle_test` 适配 | `make` + 测试全绿 |
+| **P9** ✅ | 云端 transport 接口预留（`transport_http_mtls` 桩 + 配置项**已解析** + 明确报错） | 编译通过 + 诊断准确 |
+| **P10** ✅ | 文档与脚本同步（含 `remote.conf.example`、各 README、本文件状态） | 人工复核 |
 
 ---
 

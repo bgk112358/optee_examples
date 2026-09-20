@@ -1,15 +1,5 @@
 # dongle_test — Dongle & SO-PIN Test Suite
 
-> ## ⚠️ 迁移中：C 单元测试待适配（doc 32 → P8）
->
-> `test_so_lifecycle.sh`（集成测试）**已适配 RSA-2048，可用**。
-> 但 `dongle_test`（C 单元测试）仍按 **P-256 / ECDSA** 断言（生成 P-256 密钥、
-> 用 `ECDSA_do_verify` 验签、断言 `pubkey_len ≤ 256`），在 TA 改为 RSA-2048 验签后
-> **会失败**。
->
-> 计划在 **doc 32 的 P8 阶段**一并适配（届时改为加载 `dummy.so` 插件）。
-> 参见 [docs/32 §迁移中的已知破损](../../docs/32-dongle-plugin-architecture.md)。
-
 ## 概述
 
 两个测试，覆盖 dongle 抽象层 + SO-PIN 全生命周期。
@@ -56,7 +46,11 @@ cd examples/dongle_test && mkdir -p build && cd build
 cmake .. && make
 ```
 
-**无需交叉编译**——用 host gcc + 系统 OpenSSL 即可。CMakeLists.txt 中 OpenSSL 路径需改为系统路径或直接依赖 CMake FindOpenSSL。
+**无需交叉编译**——本测试不依赖 TEE/TA，用 host gcc + **系统 OpenSSL** 即可
+（CMakeLists 用 `find_package(OpenSSL)`；**不要**指向 `three_part/openssl/out`，那是 aarch64 交叉产物，链接会失败）。
+
+它会同时编出 `dummy.so` 放在测试程序旁边，测试通过 `TBOX_DONGLE_DIR` 指向该目录，
+因此**插件加载链路也被覆盖**。
 
 ### 运行
 
@@ -64,7 +58,7 @@ cmake .. && make
 ./dongle_test
 ```
 
-每次运行自动在 `/tmp/tbox_dongle_test_key.pem` 生成临时 P-256 密钥，测试结束后自动删除，不遗留文件。
+每次运行自动在 `/tmp/tbox_dongle_test_key.pem` 生成临时 **RSA-2048** 密钥，测试结束后自动删除，不遗留文件。
 
 ### 测试用例详解
 
@@ -73,25 +67,25 @@ cmake .. && make
 | 1 | **factory** | `dongle_get("dummy")` 非 NULL 且 name 正确；`dongle_get("nonexistent")` 返回 NULL；4 个 `DONGLE_CAP_*` 标志位全部置位；7 个函数指针全部非 NULL | 接口契约：调用方依赖 caps 判断能力、依赖 name 区分后端、依赖函数指针非空防止崩溃 |
 | 2 | **probe_no_key** | 删除密钥文件 + 清除环境变量 → `probe()` 返回 0 | 后端能正确报告"硬件/密钥不在位"，调用方据此给出友好报错 |
 | 3 | **open_close** | `probe()`=1, `open()`=0, ctx 非空, `close()` 不崩溃 | 标准生命周期，测试密钥加载和资源释放是否正确 |
-| 4 | **sign** | 32 字节 digest 签名成功，DER 长度 64–72；16 字节 digest **被拒绝**（返回非 0） | 契约强制执行：ECDSA P-256 只签 SHA-256 摘要；长度错误应拒绝而非崩溃 |
-| 5 | **sign_verify** | 签名 → `get_pubkey()` 拿公钥 → `ECDSA_do_verify()` 验签通过；**篡改 digest → 验签失败** | 最强测试，证明 `sign()` 输出的是对特定 digest 的有效 ECDSA 签名，不是随机数据 |
-| 6 | **get_pubkey** | 公钥 DER 被 `d2i_PUBKEY()` 成功解析，`EVP_PKEY_id()==EVP_PKEY_EC` | 返回的公钥格式正确，可被 TA 侧解析和使用 |
+| 4 | **sign** | 32 字节 digest 签名成功，长度 **256**；16 字节 digest **被拒绝**（返回非 0） | 契约强制执行：RSA-2048 只签 SHA-256 摘要；长度错误应拒绝而非崩溃 |
+| 5 | **sign_verify** | 签名 → `get_pubkey()` 拿公钥 → **RSA PKCS#1 v1.5 + SHA-256 验签**通过；**篡改 digest → 验签失败** | 最强测试，证明 `sign()` 输出的是对特定 digest 的有效 RSA 签名，不是随机数据 |
+| 6 | **get_pubkey** | 公钥 DER 被 `d2i_PUBKEY()` 成功解析，`EVP_PKEY_id()==EVP_PKEY_RSA` | 返回的公钥格式正确，可被 TA 侧解析和使用 |
 | 7 | **serial_attr** | `get_serial()`=`0xDEAD0001`；`get_attr("name")`=`"dummy"`；`get_attr("model")` 非空；`get_attr("nonexistent")` 返回 -1 | 元数据查询接口完整，不存在属性正确报错 |
 | 8 | **double_open** | `open()` 两次得到不同 ctx；`close(NULL)` 安全不崩溃 | 资源隔离：多次打开互不干扰；析构函数安全处理 NULL |
-| 9 | **detect** | `dongle_detect()` 在有 dummy key 时返回非 NULL，`probe()`=1 | 自动检测链正常工作，优先级正确（YubiKey 不在时降级到 dummy） |
+| 9 | **detect** | `dongle_detect()` 在有 dummy key 时返回非 NULL，`probe()`=1 | 自动检测链正常工作（插件扫描 + 优先级排序） |
 
 ### 关键实现细节
 
-**密钥生成**（`gen_key()`）：每次测试用例开头调用，通过 OpenSSL EVP API 生成新 P-256 密钥，写入 `/tmp/tbox_dongle_test_key.pem`，并通过 `setenv("TBOX_DUMMY_KEY", ...)` 让 dummy 后端找到它。每个用例独立生成，测试间互不干扰。
+**密钥生成**（`gen_key()`）：每次测试用例开头调用，通过 OpenSSL 生成新 **RSA-2048** 密钥，写入 `/tmp/tbox_dongle_test_key.pem`，并通过 `setenv("TBOX_DUMMY_KEY", ...)` 让 dummy 后端找到它。每个用例独立生成，测试间互不干扰。
 
-**签名验证**（`verify_sig()`）：使用 `ECDSA_do_verify()` 而非 `EVP_DigestVerify()`。原因是 `EVP_DigestVerify` 在 OpenSSL 1.1.x 中会对输入再做一次 SHA-256（二次 hash），导致验证值不匹配。`ECDSA_do_verify` 直接对原始 hash 验签，兼容 1.1.x 和 3.x。
+**签名验证**（`verify_sig()`）：用 `EVP_PKEY_verify()` + `RSA_PKCS1_PADDING` + `EVP_sha256()`，**与 TA 的 `TEE_ALG_RSASSA_PKCS1_V1_5_SHA256` 语义一致**——输入是已算好的 32 字节摘要，不再二次哈希。
 
 **防篡改验证**（test #5）：对同一 digest 签名后，翻转 digest 中一个字节，再次验签——预期失败。这确保签名确实绑定到指定 digest，而非恒定值。
 
 ### 本测试不覆盖
 
 - **YubiKey 真实硬件** — dummy 后端用本地文件模拟，YubiKey 的 `yk_probe()`/`yk_sign()` 等仅链接未执行
-- **TA 侧 SO-PIN 逻辑** — 不测试 `CMD_SO_UNLOCK_REQ`/`CMD_SO_UNLOCK_VERIFY`、失败计数器、dongle 白名单、冷却机制
+- **TA 侧 SO-PIN 逻辑** — 不测试 `CMD_SO_UNLOCK_REQ`/`CMD_SO_UNLOCK_CONFIRM`、失败计数器、dongle 白名单、冷却机制
 - **CA CLI SO 命令** — 不测试 `do_so_unlock()` 两阶段协议、参数解析
 - **多线程/并发** — 所有测试单线程顺序执行
 
@@ -109,15 +103,15 @@ cmake .. && make
 │    ├── --init-so-pin      → CMD_SO_PIN_INIT      (12)
 │    ├── --provision-dongle → CMD_PROVISION_DONGLE (13)
 │    ├── --so-unlock        → CMD_SO_UNLOCK_REQ    (14)
-│    │                      → dongle_ops.sign()         │
-│    │                      → CMD_SO_UNLOCK_VERIFY (15)
+│    │                      → dongle_ops.sign()
+│    │                      → CMD_SO_UNLOCK_CONFIRM(18)
 │    ├── --so-lock          → CMD_SO_LOCK         (16)
 │    └── --so-info          → CMD_SO_GET_INFO     (17)
 │                                             │
 │  TA (TEE Secure World)                      │
 │    ├── so_pin_mgr.c — SO-PIN 验证 + 解锁协议  │
 │    │   + 失败计数器 + dongle 白名单            │
-│    ├── crypto_ops.c — ECDSA P-256 验签      │
+│    ├── crypto_ops.c — RSA-2048 验签(TA 内)   │
 │    ├── entry.c — 命令分发 + Gate 逻辑         │
 │    └── pin_mgr.c — 写保护检查               │
 └─────────────────────────────────────────────┘
@@ -135,7 +129,7 @@ cmake .. && make
 | `CMD_SO_PIN_INIT` | 12 | Phase A | `so_pin_init()` → SHA-256 hash → `SO_PIN_UUID` |
 | `CMD_PROVISION_DONGLE` | 13 | Phase A | `so_provision_dongle()` → SHA-256(pubkey) → `SO_DONGLE_UUID` 白名单 |
 | `CMD_SO_UNLOCK_REQ` | 14 | Phase B/D | SO-PIN 验证, challenge 生成, 失败计数器检查, 冷却检查 |
-| `CMD_SO_UNLOCK_VERIFY` | 15 | Phase B | 公钥白名单匹配, `SHA256(challenge\|\|dongle_index)` 构建, `crypto_ecdsa_verify()` P-256 验签, 状态 LOCKED→UNLOCKED |
+| `CMD_SO_UNLOCK_CONFIRM` | 18 | Phase B | **TA 内原子完成**: `rsa_import_pubkey_from_der()` → `crypto_rsa_verify()` 验签 ∧ 白名单匹配 → LOCKED→UNLOCKED。改造前是无参空壳（doc 28 缺口） |
 | `CMD_SO_LOCK` | 16 | Phase C | `so_pin_lock()` → SO_LOCKED, `SO_LOCK_UUID` 持久化 |
 | `CMD_SO_GET_INFO` | 17 | 各 Phase | `so_pin_get_info()` → 状态/失败计数/冷却时间 |
 
@@ -188,14 +182,14 @@ chmod +x test_so_lifecycle.sh
 |:--:|------|------|
 | B1 | `--lock` | `pin_mgr_lock()` → `CMD_PROVISION_LOCK` 成功, TA 状态 LOCKED |
 | B2 | `--gen-rsa test-key` | **预期失败**——`cmd_needs_write()` + `pin_mgr_is_locked()` → `TEE_ERROR_ACCESS_DENIED` |
-| B3 | `--so-unlock --so-pin <SO_PIN> --dongle dummy` | 两阶段协议完整执行: Phase 1 SO-PIN 验证 + challenge 生成, Phase 2 dongle 签名 + TA ECDSA 验签 → UNLOCKED |
+| B3 | `--so-unlock --so-pin <SO_PIN> --dongle dummy` | 两阶段协议完整执行: Phase 1 SO-PIN 验证 + challenge 生成, Phase 2 dongle RSA 签名 + **TA 内 RSA 验签 + 白名单匹配** → UNLOCKED |
 | B4 | `--gen-rsa test-key --size 2048 --sign` | **预期成功**——SO UNLOCKED 状态下 Gate 2 豁免, 写操作恢复 |
 | B5 | `--delete test-key` | 清理测试密钥 |
 
 **验证点**：
 - `CMD_PROVISION_LOCK` 后写保护生效（`cmd_needs_write` 被 Gate 2 拦截）
-- `CMD_SO_UNLOCK_REQ` + `CMD_SO_UNLOCK_VERIFY` 完整两阶段握手
-- TA 侧 `so_unlock_verify()` 内部: 公钥 hash 白名单匹配 + `crypto_ecdsa_verify()` P-256 验签通过
+- `CMD_SO_UNLOCK_REQ` + `CMD_SO_UNLOCK_CONFIRM` 完整两阶段握手
+- TA 侧 `so_unlock_confirm()` 内部: **RSA 验签 + 公钥 hash 白名单匹配（原子完成）**
 - SO UNLOCKED 后写操作恢复（`so_pin_is_unlocked()` 返回 1, Gate 2 放行）
 - `--so-info` 确认状态=`UNLOCKED`
 

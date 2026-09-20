@@ -3,8 +3,14 @@
  *
  * Dongle abstraction layer unit test.
  *
- * Tests the dongle_ops interface directly (no TEE/TA dependency).
- * Uses the dummy backend with a temporary P-256 key.
+ * Tests the dongle_ops interface through the PLUGIN LOADER (no TEE/TA
+ * dependency).  The dummy backend is dlopen'd from `dummy.so` sitting next
+ * to this binary, driven by a temporary RSA-2048 key.
+ *
+ * NOTE: signatures are RSA-2048 (PKCS#1 v1.5 / SHA-256) — exactly what the
+ * TA verifies with TEE_ALG_RSASSA_PKCS1_V1_5_SHA256.  ECDSA is no longer
+ * supported (OP-TEE 3.2 cannot verify it in the secure world — docs/30,
+ * docs/32 §4).
  *
  * Build: see CMakeLists.txt
  * Run:   ./dongle_test
@@ -13,14 +19,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <assert.h>
 
-#include <openssl/ec.h>
-#include <openssl/ecdsa.h>
+#include <openssl/bio.h>
+#include <openssl/bn.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+#include <openssl/rsa.h>
 #include <openssl/sha.h>
-#include <openssl/bio.h>
+#include <openssl/x509.h>	/* d2i_PUBKEY lives here, not in evp.h */
 
 #include "dongle_ops.h"
 
@@ -44,30 +52,35 @@ static int g_failed = 0;
 	test_##name(); \
 } while(0)
 
-/* ---- Helper: generate temporary P-256 key ---- */
+/* ---- Helper: generate temporary RSA-2048 key ---- */
 static const char *TMP_KEY = "/tmp/tbox_dongle_test_key.pem";
 
 static void gen_key(void)
 {
-	EVP_PKEY_CTX *pctx = NULL;
-	EVP_PKEY *pkey = NULL;
+	RSA *rsa = NULL;
+	BIGNUM *e = NULL;
 	FILE *fp;
 
-	pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
-	assert(pctx);
-	assert(EVP_PKEY_keygen_init(pctx) > 0);
-	assert(EVP_PKEY_CTX_set_ec_paramgen_curve_nid(pctx, NID_X9_62_prime256v1) > 0);
-	assert(EVP_PKEY_keygen(pctx, &pkey) > 0);
-	EVP_PKEY_CTX_free(pctx);
+	rsa = RSA_new();
+	e = BN_new();
+	assert(rsa && e);
+	assert(BN_set_word(e, RSA_F4) == 1);
+	assert(RSA_generate_key_ex(rsa, 2048, e, NULL) == 1);
 
 	fp = fopen(TMP_KEY, "w");
 	assert(fp);
-	assert(PEM_write_PrivateKey(fp, pkey, NULL, NULL, 0, NULL, NULL));
+	assert(PEM_write_RSAPrivateKey(fp, rsa, NULL, NULL, 0, NULL, NULL) == 1);
 	fclose(fp);
-	EVP_PKEY_free(pkey);
+	RSA_free(rsa);
+	BN_free(e);
 
+	/*
+	 * Points the dummy backend at our temp key.  Note this is the LEGACY
+	 * variable: it loses to a `<plugin dir>/dummy.key` if one exists, so
+	 * the plugin directory used here must not contain one.
+	 */
 	setenv("TBOX_DUMMY_KEY", TMP_KEY, 1);
-	printf("  Key generated: %s\n", TMP_KEY);
+	printf("  Key generated: %s (RSA-2048)\n", TMP_KEY);
 }
 
 static void del_key(void)
@@ -76,34 +89,35 @@ static void del_key(void)
 	remove("/tmp/dummy-dongle-key.pem");
 }
 
-/* ---- Helper: verify ECDSA signature with OpenSSL (1.1.x and 3.x compat) ---- */
+/*
+ * Verify a signature the same way the TA does:
+ * RSA-2048 PKCS#1 v1.5 over a SHA-256 digest
+ * (TEE_ALG_RSASSA_PKCS1_V1_5_SHA256 + TEE_AsymmetricVerifyDigest).
+ */
 static int verify_sig(const uint8_t *pubkey_der, size_t pk_len,
 		      const uint8_t *digest, size_t dgst_len,
 		      const uint8_t *sig_der, size_t sig_len)
 {
 	const unsigned char *p;
 	EVP_PKEY *pkey = NULL;
-	EC_KEY *ec = NULL;
-	ECDSA_SIG *ecsig = NULL;
+	EVP_PKEY_CTX *pctx = NULL;
 	int ret = -1;
 
 	p = pubkey_der;
 	pkey = d2i_PUBKEY(NULL, &p, (long)pk_len);
 	if (!pkey) { fprintf(stderr, "  d2i_PUBKEY failed\n"); return -1; }
 
-	ec = EVP_PKEY_get0_EC_KEY(pkey);
-	if (!ec) { fprintf(stderr, "  not an EC key\n"); goto out; }
+	pctx = EVP_PKEY_CTX_new(pkey, NULL);
+	if (!pctx) goto out;
+	if (EVP_PKEY_verify_init(pctx) <= 0) goto out;
+	EVP_PKEY_CTX_set_rsa_padding(pctx, RSA_PKCS1_PADDING);
+	EVP_PKEY_CTX_set_signature_md(pctx, EVP_sha256());
 
-	p = sig_der;
-	ecsig = d2i_ECDSA_SIG(NULL, &p, (long)sig_len);
-	if (!ecsig) { fprintf(stderr, "  d2i_ECDSA_SIG failed\n"); goto out; }
-
-	/* ECDSA_do_verify: raw hash verify, no double-hash (works on 1.1.x + 3.x) */
-	ret = ECDSA_do_verify(digest, (int)dgst_len, ecsig, ec);
-	ret = (ret == 1) ? 0 : -1;
+	/* Prehashed: `digest` is the SHA-256 output, not the raw message */
+	ret = (EVP_PKEY_verify(pctx, sig_der, sig_len, digest, dgst_len) == 1) ? 0 : -1;
 
 out:
-	if (ecsig) ECDSA_SIG_free(ecsig);
+	if (pctx) EVP_PKEY_CTX_free(pctx);
 	if (pkey) EVP_PKEY_free(pkey);
 	return ret;
 }
@@ -187,7 +201,7 @@ TEST(sign)
 	const struct dongle_ops *ops = dongle_get("dummy");
 	struct dongle_ctx *ctx = NULL;
 	uint8_t digest[32];
-	uint8_t sig_der[128];
+	uint8_t sig_der[512];
 	size_t sig_len = sizeof(sig_der);
 	int i;
 
@@ -200,7 +214,7 @@ TEST(sign)
 		digest[i] = (uint8_t)(i * 7 + 13);
 
 	CHECK(ops->sign(ctx, digest, 32, sig_der, &sig_len) == 0, "sign() failed");
-	CHECK(sig_len >= 64 && sig_len <= 72, "signature length out of range");
+	CHECK(sig_len == 256, "RSA-2048 signature must be 256 bytes");
 
 	/* sign with wrong digest length should fail */
 	{
@@ -220,9 +234,9 @@ TEST(sign_verify)
 	const struct dongle_ops *ops = dongle_get("dummy");
 	struct dongle_ctx *ctx = NULL;
 	uint8_t digest[32];
-	uint8_t sig_der[128];
+	uint8_t sig_der[512];
 	size_t sig_len = sizeof(sig_der);
-	uint8_t pubkey_der[256];
+	uint8_t pubkey_der[512];
 	size_t pubkey_len = sizeof(pubkey_der);
 	int i;
 
@@ -230,7 +244,8 @@ TEST(sign_verify)
 
 	CHECK(ops->open(&ctx) == 0, "open() failed");
 	CHECK(ops->get_pubkey(ctx, pubkey_der, &pubkey_len) == 0, "get_pubkey() failed");
-	CHECK(pubkey_len >= 88 && pubkey_len <= 256, "pubkey DER length out of range");
+	/* RSA-2048 SubjectPublicKeyInfo DER is ~294 bytes */
+	CHECK(pubkey_len >= 256 && pubkey_len <= 512, "pubkey DER length out of range");
 
 	for (i = 0; i < 32; i++)
 		digest[i] = (uint8_t)(i * 7 + 13);
@@ -256,7 +271,7 @@ TEST(get_pubkey)
 {
 	const struct dongle_ops *ops = dongle_get("dummy");
 	struct dongle_ctx *ctx = NULL;
-	uint8_t pubkey_der[256];
+	uint8_t pubkey_der[512];
 	size_t pubkey_len = sizeof(pubkey_der);
 	const unsigned char *p;
 	EVP_PKEY *pkey = NULL;
@@ -270,7 +285,7 @@ TEST(get_pubkey)
 	p = pubkey_der;
 	pkey = d2i_PUBKEY(NULL, &p, (long)pubkey_len);
 	CHECK(pkey != NULL, "pubkey DER could not be parsed by OpenSSL");
-	CHECK(EVP_PKEY_id(pkey) == EVP_PKEY_EC, "pubkey is not an EC key");
+	CHECK(EVP_PKEY_id(pkey) == EVP_PKEY_RSA, "pubkey is not an RSA key");
 
 	EVP_PKEY_free(pkey);
 	ops->close(ctx);
@@ -346,11 +361,45 @@ TEST(detect)
 }
 
 /* ---- Main ---- */
+/*
+ * The loader reads plugins from $TBOX_DONGLE_DIR (default /usr/lib/tbox/dongle).
+ * Point it at the directory holding our freshly built dummy.so, which CMake
+ * places next to this test binary.  Fail loudly if it is not there — a
+ * silent fallback would make every test fail with a confusing message.
+ */
+static void setup_plugin_dir(void)
+{
+	char exe[512];
+	char so[600];
+	ssize_t n;
+	char *slash;
+
+	n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+	assert(n > 0);
+	exe[n] = '\0';
+
+	slash = strrchr(exe, '/');
+	assert(slash);
+	*slash = '\0';
+
+	snprintf(so, sizeof(so), "%s/dummy.so", exe);
+	if (access(so, R_OK) != 0) {
+		fprintf(stderr, "FATAL: %s not found.\n"
+			"  Build the plugin first: make dummy_plugin_for_test\n", so);
+		exit(1);
+	}
+
+	setenv("TBOX_DONGLE_DIR", exe, 1);
+	printf("Plugin dir: %s\n", exe);
+}
+
 int main(int argc, char **argv)
 {
 	(void)argc; (void)argv;
 
 	printf("=== TBox Dongle Abstraction Layer Unit Tests ===\n");
+
+	setup_plugin_dir();
 
 	RUN(factory);
 	RUN(probe_no_key);
