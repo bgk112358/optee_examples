@@ -408,7 +408,7 @@ key         = /etc/tbox/dongle/id_ed25519   # 本设备专属 SSH 身份（§7.5
 known_hosts = /etc/tbox/dongle/known_hosts  # 必须预置（强制校验主机密钥）
 ssh_bin     = ssh                     # 嵌入式常为 dropbear 的 dbclient
 timeout_ms  = 2000
-remote_cmd  = tbox-dongle-sign
+remote_cmd  =                         # **留空**：强制命令模式下只发子命令（见下）
 
 # --- 云端（预留，P9）：字段**会被解析**，但传输层未实现 ---
 # transport   = http_mtls
@@ -424,6 +424,12 @@ remote_cmd  = tbox-dongle-sign
 > 选它会**明确报错**（`RESERVED, not implemented yet`）而**不会静默成功**——
 > 配置错的设备绝不能看起来像"没插狗"。实现云端只需填
 > `transport_http_mtls_call()` 一个函数，调用方无需改动。
+
+> ⚠️ **`remote_cmd` 必须留空（推荐部署下）**：配合 §7.7 的 sshd 强制命令
+> （`command="... serve --device X"`），sshd 执行服务、客户端敲的整串作为
+> `$SSH_ORIGINAL_COMMAND` 传进去——所以插件只能发**子命令**本身。
+> 填了前缀（如 `tbox-dongle-sign`）会被 `serve()` 当成子命令名，
+> 报 `未知子命令`。仅"普通 shell 账号"部署才需要填完整命令。
 
 ### 7.7 远端服务（Ubuntu + Python）
 

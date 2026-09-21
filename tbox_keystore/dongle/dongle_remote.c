@@ -60,7 +60,17 @@ struct remote_cfg {
 	char key[512];		/* device's SSH private key */
 	char known_hosts[512];
 	int  timeout_ms;
-	char remote_cmd[256];	/* remote helper, invoked via ssh */
+	/*
+	 * Prefix for the remote command line.  LEAVE EMPTY for the recommended
+	 * deployment (sshd `command="... serve --device X"`): there sshd runs
+	 * the forced command and hands us $SSH_ORIGINAL_COMMAND verbatim, so we
+	 * must send ONLY the subcommand ("getpub") — prefixing it would make
+	 * serve() treat the prefix as the subcommand name.
+	 *
+	 * Set it only when the account is a plain shell account where the full
+	 * command has to be spelled out, e.g. "/opt/tbox-dongle-sign/tbox-dongle-sign".
+	 */
+	char remote_cmd[256];
 
 	/* --- http_mtls transport (cloud) — PARSED but NOT implemented (P9) ---
 	 * Parsed already so that a config written for the cloud form is not
@@ -86,7 +96,7 @@ static void cfg_defaults(void)
 	memset(&g_cfg, 0, sizeof(g_cfg));
 	snprintf(g_cfg.transport, sizeof(g_cfg.transport), "ssh");
 	snprintf(g_cfg.ssh_bin, sizeof(g_cfg.ssh_bin), "%s", SSH_BIN_DEFAULT);
-	snprintf(g_cfg.remote_cmd, sizeof(g_cfg.remote_cmd), "tbox-dongle-sign");
+	/* remote_cmd intentionally left EMPTY — see the field comment above */
 	g_cfg.port = 22;
 	g_cfg.timeout_ms = CFG_DEFAULT_TIMEOUT_MS;
 }
@@ -351,7 +361,9 @@ static int transport_ssh_call(const char *subcmd, const char *arg,
 	snprintf(dest, sizeof(dest), "%s@%s",
 		 g_cfg.user[0] ? g_cfg.user : "root", g_cfg.host);
 	argv[n++] = dest;
-	argv[n++] = g_cfg.remote_cmd;
+	/* only prefix the helper name when explicitly configured (see struct) */
+	if (g_cfg.remote_cmd[0])
+		argv[n++] = g_cfg.remote_cmd;
 	argv[n++] = (char *)subcmd;
 	if (arg)
 		argv[n++] = (char *)arg;

@@ -33,8 +33,19 @@ ssh_bin = ssh
 # 单次调用总超时（毫秒）。probe() 也用它，太大会拖慢每次启动。
 timeout_ms = 2000
 
-# 远端要执行的命令（签名服务器上的 tbox-dongle-sign）
-remote_cmd = tbox-dongle-sign
+# ---- remote_cmd：远端命令前缀。**推荐部署下留空** ----
+#
+# 本方案推荐的部署是 sshd 强制命令：
+#     command="/opt/tbox-dongle-sign/tbox-dongle-sign serve --device X",no-pty,... <设备公钥>
+# 此时 sshd 负责执行服务，客户端敲的整串会作为 $SSH_ORIGINAL_COMMAND 交给它。
+# 所以插件必须**只发子命令**（如 `getpub`）——留空即可：
+remote_cmd =
+#
+# 只有当你用的是「普通 shell 账号」（没有 command= 强制命令）时，才需要写出完整命令：
+# remote_cmd = /opt/tbox-dongle-sign/tbox-dongle-sign
+#
+# ⚠️ 在强制命令模式下填了它（例如 `tbox-dongle-sign`），服务会把这个名字
+#    当成子命令名 → 报 `未知子命令: tbox-dongle-sign`。
 
 
 # ============================================================

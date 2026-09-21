@@ -36,3 +36,4 @@
 | [30-ecc-p256-ta-unsupported-debug-log.md](30-ecc-p256-ta-unsupported-debug-log.md) | TA 不支持 ECC P-256 验签的调试记录（ECDSA transient panic → RSA） |
 | [31-key-management-and-secure-services.md](31-key-management-and-secure-services.md) | 口语化总述：密钥管理（PIN/锁定/SO-PIN+dongle）+ HTTPS/MQTTS 安全能力来源 |
 | [32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md) | **Dongle 可插拔设计**：本地软狗 + 远程签名狗（SSH/RSA-2048/TA 内验签/审计日志） |
+| [33-deployment-guide.md](33-deployment-guide.md) | **部署手册（从零开始）**：两种 dongle 形态的完整部署/灌装/售后解锁/验收/排查 |

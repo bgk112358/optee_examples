@@ -853,7 +853,7 @@ static void usage(const char *prog)
 	"  --so-info                  Show SO state and stats\n"
 	"\n"
 	"Dongle options:\n"
-	"  --dongle <name>            Select dongle backend (yubikey, dummy)\n"
+	"  --dongle <name>            Select dongle backend (dummy, remote)\n"
 	"                             Default: auto-detect\n"
 	"\n", prog);
 	exit(1);
