@@ -24,7 +24,7 @@ engine_test [key-label]
 extern int ENGINE_load_tbox_keystore(void);
 ```
 
-链接 `libe_tbox_keystore.so` 后可用。不直接调用任何 TEEC 或 TA 接口。
+链接 `libengkeystore.so` 后可用。不直接调用任何 TEEC 或 TA 接口。
 
 ## 内部逻辑（6 步骤）
 
@@ -43,7 +43,7 @@ extern int ENGINE_load_tbox_keystore(void);
 
 | 依赖 | 来源 | 部署路径 |
 |------|------|----------|
-| `libe_tbox_keystore.so` | `../../engine/build/` | `/usr/lib/` |
+| `libengkeystore.so` | `../../engine/build/` | `/usr/lib/` |
 | `libteec.a` | `optee400/optee_client/` | 静态链接到 .so |
 | OpenSSL 1.1.x | `three_part/openssl/out/` | 交叉编译 |
 | TA 已灌装 PIN + 密钥 | `tbox_keystore --init-pin …` | `/lib/optee_armtz/` |

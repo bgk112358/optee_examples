@@ -169,6 +169,30 @@ static TEEC_Result invoke_cmd(uint32_t cmd, TEEC_Operation *op)
 	return TEEC_InvokeCommand(&g_sess, cmd, op, NULL);
 }
 
+/*
+ * Friendly diagnosis for the write commands.
+ *
+ * The TA refuses write commands (ta/entry.c - cmd_needs_write) with
+ * TEE_ERROR_ACCESS_DENIED while it is provisioned+locked and the SO has not
+ * been unlocked (Gate 2).  A TA that was never provisioned answers with the
+ * same code from Gate 1 (pin_mgr_verify -> "PIN not yet provisioned").
+ * Both are ordinary operating states, not failures -- so name the fix
+ * instead of dumping a bare 0xffff0001.
+ *
+ * Apply ONLY to the write-protected commands.  CMD_SO_UNLOCK_REQ/CONFIRM are
+ * deliberately exempt from the write gate, so ACCESS_DENIED there means
+ * something else entirely (bricked / signature not in whitelist) and is
+ * handled separately in do_so_unlock().
+ */
+static void die_if_write_denied(TEEC_Result res)
+{
+	if (res != TEEC_ERROR_ACCESS_DENIED)
+		return;
+
+	errx(1, "TA denied the write: locked (run --so-unlock) "
+		"or no PIN provisioned (run --init-pin); see --so-info");
+}
+
 /* ---- Command wrappers (existing) ---- */
 
 static void do_init_pin(const char *pin_hex)
@@ -193,6 +217,7 @@ static void do_init_pin(const char *pin_hex)
 	res = invoke_cmd(CMD_PIN_INIT, &op);
 	free(pin);
 
+	die_if_write_denied(res);
 	if (res != TEEC_SUCCESS)
 		errx(1, "PIN_INIT failed: 0x%x", res);
 	printf("PIN initialized.\n");
@@ -220,6 +245,7 @@ static void do_gen_rsa(const char *label, uint32_t size_bits,
 	res = invoke_cmd(CMD_KEY_GEN_RSA, &op);
 	if (res == TEEC_ERROR_ACCESS_CONFLICT)
 		errx(1, "Key already exists: '%s'", label);
+	die_if_write_denied(res);
 	if (res != TEEC_SUCCESS)
 		errx(1, "KEY_GEN_RSA failed: 0x%x", res);
 	printf("RSA-%u key generated: '%s' (perms=0x%x)\n",
@@ -248,6 +274,7 @@ static void do_gen_aes(const char *label, uint32_t size_bits,
 	res = invoke_cmd(CMD_KEY_GEN_AES, &op);
 	if (res == TEEC_ERROR_ACCESS_CONFLICT)
 		errx(1, "Key already exists: '%s'", label);
+	die_if_write_denied(res);
 	if (res != TEEC_SUCCESS)
 		errx(1, "KEY_GEN_AES failed: 0x%x", res);
 	printf("AES-%u key generated: '%s' (perms=0x%x)\n",
@@ -460,6 +487,7 @@ static void do_delete_key(const char *label)
 	op.params[0].tmpref.size = strlen(label);
 
 	res = invoke_cmd(CMD_KEY_DELETE, &op);
+	die_if_write_denied(res);
 	if (res != TEEC_SUCCESS)
 		errx(1, "KEY_DELETE failed: 0x%x", res);
 	printf("Key '%s' deleted.\n", label);
@@ -530,6 +558,7 @@ static void do_so_pin_init(const char *pin_hex)
 	res = invoke_cmd(CMD_SO_PIN_INIT, &op);
 	free(pin_raw);
 
+	die_if_write_denied(res);
 	if (res != TEEC_SUCCESS)
 		errx(1, "SO_PIN_INIT failed: 0x%x", res);
 	printf("SO-PIN initialized.\n");
@@ -563,6 +592,7 @@ static void do_provision_dongle(const char *dongle_name)
 		errx(1, "Dongle already registered (duplicate)");
 	if (res == TEEC_ERROR_OVERFLOW)
 		errx(1, "Dongle whitelist full (max %u)", SO_DONGLE_MAX);
+	die_if_write_denied(res);
 	if (res != TEEC_SUCCESS)
 		errx(1, "PROVISION_DONGLE failed: 0x%x", res);
 
@@ -593,6 +623,7 @@ static void do_provision_dongle_from_file(const char *path)
 		errx(1, "Dongle already registered (duplicate)");
 	if (res == TEEC_ERROR_OVERFLOW)
 		errx(1, "Dongle whitelist full (max %u)", SO_DONGLE_MAX);
+	die_if_write_denied(res);
 	if (res != TEEC_SUCCESS)
 		errx(1, "PROVISION_DONGLE failed: 0x%x", res);
 
@@ -842,19 +873,20 @@ static void usage(const char *prog)
 	"SO (Security Officer) commands — requires dongle:\n"
 	"  --init-so-pin <hex>        Initialize SO-PIN (provisioning only)\n"
 	"  --provision-dongle         Register connected dongle to TA whitelist\n"
-	"       [--dongle <name>]     Dongle backend: yubikey | dummy\n"
+	"       [--dongle <name>]     Dongle backend: dummy | remote\n"
 	"  --provision-dongle-from-file <path>\n"
 	"                             Register dongle from public key DER file\n"
 	"  --so-unlock                Unlock TA (two-phase dongle challenge)\n"
 	"       --so-pin <hex>        SO-PIN (required)\n"
-	"       [--dongle <name>]     Dongle backend: yubikey | dummy\n"
+	"       [--dongle <name>]     Dongle backend: dummy | remote\n"
 	"       [--dongle-index <n>]  Dongle index in whitelist (default 0)\n"
 	"  --so-lock                  Re-lock TA after maintenance\n"
 	"  --so-info                  Show SO state and stats\n"
 	"\n"
 	"Dongle options:\n"
-	"  --dongle <name>            Select dongle backend (dummy, remote)\n"
-	"                             Default: auto-detect\n"
+	"  --dongle <name>            Load $TBOX_DONGLE_DIR/<name>.so (dummy, remote)\n"
+	"                             <name> is a plain name, NOT a path\n"
+	"                             Default: scan the dir and auto-detect\n"
 	"\n", prog);
 	exit(1);
 }

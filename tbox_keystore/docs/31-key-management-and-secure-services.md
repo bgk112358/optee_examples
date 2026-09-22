@@ -19,7 +19,7 @@
 │     ▼  通过标准 OpenSSL API 要"签名/验签/解密"                                      │
 │  ┌────────────────────┐                                                            │
 │  │ OpenSSL 1.1.1      │                                                            │
-│  │  + ENGINE          │  e_tbox_keystore.so  ← 引擎,把 RSA 运算截下来转发给 TA      │
+│  │  + ENGINE          │  libengkeystore.so   ← 引擎,把 RSA 运算截下来转发给 TA     │
 │  └────────┬───────────┘                                                            │
 │           ▼  libteec (TEE Client API)                                              │
 │           ▼  调用 TA 的 CMD_SIGN / CMD_VERIFY / CMD_RSA_DECRYPT                    │
@@ -258,7 +258,7 @@ HTTPS、MQTTS 的"安全"本质都是 **TLS**。TLS 双向认证（mutual TLS, m
 
 ## 2.2 关键部件：OpenSSL ENGINE（`e_tbox_keystore.c`）
 
-OpenSSL 默认用软件实现 RSA（私钥在内存里算）。我们写了一个 **ENGINE**（源码 `engine/e_tbox_keystore.c`，编译出 `libe_tbox_keystore.so`），作用是**把 OpenSSL 的 RSA 运算"截胡"下来，转手发给 TA**：
+OpenSSL 默认用软件实现 RSA（私钥在内存里算）。我们写了一个 **ENGINE**（源码 `engine/e_tbox_keystore.c`，编译出 `libengkeystore.so`），作用是**把 OpenSSL 的 RSA 运算"截胡"下来，转手发给 TA**：
 
 ```
 OpenSSL 要 rsa_sign / rsa_verify / rsa_priv_dec
@@ -318,7 +318,7 @@ SSL_CTX_load_verify_locations(ctx, "server-sw.crt"); // ⑤ 信任对端
 SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL); // ⑥ 强制双向
 ```
 
-**依赖链**：`https_client` → `libe_tbox_keystore.so`（ENGINE）→ `libteec` → TA。
+**依赖链**：`https_client` → `libengkeystore.so`（ENGINE）→ `libteec` → TA。
 配套场景：服务器那头可以就是一个 `openssl s_server`（软件密钥），验客户端时照样验得过——因为验的是客户端**证书里的公钥**，而签名是 TA 用真私钥做的。
 
 ## 2.5 MQTTS：`mqtts_pub` / `mqtts_sub` 这个例子
@@ -340,7 +340,7 @@ ssl_config.c 的 tbox_ssl_config_ex(ctx, "pub-key"|"sub-key", "/tmp/pub.crt"|"/t
 
 两个进程（发布、订阅）用**两把不同的 TA 钥匙**（`pub-key`、`sub-key`），这里有个现实原因：**OP-TEE 3.2 的 REE 文件系统对同一把持久化对象的并发访问会冲突**，两个进程各用各的钥匙就绕开了（详见 docs/16）。
 
-**依赖链**：`mqtts_pub/sub` → `paho.mqtt.c`（带补丁）→ `ssl_config.c` → `libe_tbox_keystore.so` → `libteec` → TA。broker 侧用 EMQX，配双向认证 + 信任根 CA。
+**依赖链**：`mqtts_pub/sub` → `paho.mqtt.c`（带补丁）→ `ssl_config.c` → `libengkeystore.so` → `libteec` → TA。broker 侧用 EMQX，配双向认证 + 信任根 CA。
 
 ## 2.6 底层能力的调用（第 1、2 部分怎么接上的）
 
@@ -363,8 +363,8 @@ ENGINE 里那些 `CMD_SIGN/CMD_VERIFY/CMD_RSA_DECRYPT`，最终都由 TA 的 `cr
                         │
                         ▼
             ┌────────────────────────┐
-            │ OpenSSL + ENGINE       │  e_tbox_keystore.so
-            │ (libe_tbox_keystore.so)│  ── 只认 label, 无私钥
+            │ OpenSSL + ENGINE       │  libengkeystore.so
+            │ (libengkeystore.so)    │  ── 只认 label, 无私钥
             └───────────┬────────────┘
                         │ TEEC_InvokeCommand(CMD_SIGN/VERIFY/RSA_DECRYPT, label, …)
                         ▼

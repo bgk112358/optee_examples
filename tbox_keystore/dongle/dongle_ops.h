@@ -5,7 +5,9 @@
  *
  * Backends are loaded at run time as PLUGINS (shared objects) from a
  * directory, so "installing a dongle driver = dropping a .so in the
- * directory".  See docs/32-dongle-plugin-architecture.md.
+ * directory".  A backend is selected either by name -- which resolves to
+ * <dir>/<name>.so -- or by auto-detection, which scans the directory.
+ * See docs/32-dongle-plugin-architecture.md §6.
  *
  *   default dir : /usr/lib/tbox/dongle/
  *   override    : $TBOX_DONGLE_DIR
@@ -40,8 +42,15 @@
  * and MAY export (optional — the loader probes for it with dlsym):
  *
  *   void dongle_plugin_set_dir(const char *dir);
- *       Lets the plugin learn the search directory, so it can resolve a
+ *       Lets the plugin learn the search DIRECTORY, so it can resolve a
  *       companion key file next to itself (e.g. <dir>/dummy.key).
+ *
+ *       This always receives the plugin directory — never the .so path —
+ *       whether the plugin was loaded by name or by a directory scan.
+ *       Changing that contract, or adding a symbol with different
+ *       semantics, requires bumping DONGLE_PLUGIN_ABI_VERSION above.
+ *       (Adding the by-name loading path did NOT change this contract,
+ *       so the ABI version stays 1: existing .so files need no rebuild.)
  */
 #define DONGLE_PLUGIN_SYM_GET_OPS    "dongle_plugin_get_ops"
 #define DONGLE_PLUGIN_SYM_ABI_VER    "dongle_plugin_abi_version"
@@ -112,14 +121,22 @@ struct dongle_ops {
  *
  * Triggers the (one-time) plugin directory scan on first use, then calls
  * each loaded plugin's probe() in priority order (highest first; ties
- * broken by plugin name ascending, so the result is deterministic).
+ * broken by ops->name ascending, so the result is deterministic).
  * Returns NULL if no plugin is loaded or none reports a dongle present.
  */
 const struct dongle_ops *dongle_detect(void);
 
 /*
- * Factory: get a specific backend by name (ops->name).
- * Returns NULL if no loaded plugin matches.
+ * Factory: get a specific backend by name.
+ *
+ * Resolves <name> to <plugin dir>/<name>.so and loads exactly that file --
+ * no directory scan.  <name> must be a plain file name matching
+ * [A-Za-z0-9._-], must not start with '.', and must be <= 64 chars;
+ * filesystem paths are rejected on purpose, so the plugin directory cannot
+ * be escaped.
+ *
+ * Returns NULL if the name is invalid, or the file is missing, is not a
+ * dongle plugin, or reports a mismatched ABI version.
  */
 const struct dongle_ops *dongle_get(const char *name);
 

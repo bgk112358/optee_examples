@@ -155,6 +155,35 @@ TEST(factory)
 	ops = dongle_get("nonexistent");
 	CHECK(ops == NULL, "dongle_get(\"nonexistent\") should be NULL");
 
+	/*
+	 * ---- By-name loading: <name> must be a PLAIN FILE NAME ----
+	 *
+	 * The name is concatenated into "<dir>/<name>.so", so anything with a
+	 * '/' is rejected.  That keeps the plugin directory from being escaped
+	 * ("../evil"), and it also stops one file from acquiring a second path
+	 * spelling -- which would defeat the loader's path dedup and load the
+	 * same plugin twice.
+	 */
+	CHECK(dongle_get("../dummy") == NULL,  "relative path must be rejected");
+	CHECK(dongle_get("/tmp/dummy") == NULL, "absolute path must be rejected");
+	CHECK(dongle_get("sub/dummy") == NULL, "name containing '/' must be rejected");
+	CHECK(dongle_get(".hidden") == NULL,   "leading dot must be rejected");
+	CHECK(dongle_get("") == NULL,          "empty backend name must be rejected");
+	CHECK(dongle_get(NULL) == NULL,        "NULL backend name must be rejected");
+
+	/* The loader appends ".so" itself -- passing it in must NOT resolve */
+	CHECK(dongle_get("dummy.so") == NULL,
+	      "\"dummy.so\" must not resolve (suffix is added by the loader)");
+
+	{
+		char longname[80];
+
+		memset(longname, 'a', sizeof(longname) - 1);
+		longname[sizeof(longname) - 1] = '\0';
+		CHECK(dongle_get(longname) == NULL,
+		      "over-long backend name must be rejected");
+	}
+
 	PASS();
 }
 

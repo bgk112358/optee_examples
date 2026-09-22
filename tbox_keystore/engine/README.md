@@ -10,7 +10,7 @@
 
 | 产物 | 说明 |
 |------|------|
-| `libe_tbox_keystore.so` | ENGINE 共享库，部署到 `/usr/lib/` |
+| `libengkeystore.so` | ENGINE 共享库，部署到 `/usr/lib/` |
 
 ## 架构
 
@@ -207,7 +207,7 @@ TA 和 ENGINE 均在 ARM (little-endian) 上运行。TA 通过 `memcpy(header, .
 > 二者**不互相绑定**：改 id 不影响 ex_data 槽；key label（如 `"client-key"`）与
 > `"tbox_keystore"` id 也无关——id 决定"用哪个引擎"，label 决定"用 TA 里哪把钥匙"。
 
-## 多个 libe_tbox_keystore.so 的选型
+## 多个 libengkeystore.so 的选型
 
 > 前提纠偏：把多个 `.so` 同时 `-l` 进同一程序**不能实现运行时选型**，反而会出问题：
 > ① 同名导出符号被遮蔽（链接顺序第一个生效）；② 都 `ENGINE_set_id("tbox_keystore")`，
@@ -217,7 +217,7 @@ TA 和 ENGINE 均在 ARM (little-endian) 上运行。TA 通过 `memcpy(header, .
 
 | 需求 | 做法 |
 |------|------|
-| **链接期定用哪个**（本项目现状） | 不要 `-l` 多个。`target_link_libraries` 只写目标 `.so` 路径（如 `${ENGINE_BUILD}/libe_tbox_keystore.so`），换目录即换引擎 |
+| **链接期定用哪个**（本项目现状） | 不要 `-l` 多个。`target_link_libraries` 只写目标 `.so` 路径（如 `${ENGINE_BUILD}/libengkeystore.so`），换目录即换引擎 |
 | **运行期按路径选一个** | 用**动态引擎加载**（本 `.so` 已具备，`IMPLEMENT_DYNAMIC_BIND_FN`）：不 `-l`，程序 `ENGINE_load_dynamic()` + config 里 `dynamic_path` 指向要用的 `.so` 绝对路径 |
 | **多引擎并存、各接不同 TA** | 必须**改 ENGINE id**：各 `.so` 的 `ENGINE_set_id` 分别设 `"tbox_keystore_a"`/`"tbox_keystore_b"`，代码 `ENGINE_by_id("tbox_keystore_b")` 选对应引擎 |
 
@@ -234,13 +234,13 @@ tbox_keystore = tbox_keystore_section
 
 [tbox_keystore_section]
 engine_id = tbox_keystore
-dynamic_path = /usr/lib/engines-1.1/libe_tbox_keystore.so
+dynamic_path = /usr/lib/engines-1.1/libengkeystore.so
 ```
 
 应用侧等价代码（不依赖 .cnf）：
 ```c
 ENGINE *e = ENGINE_by_id("dynamic");
-ENGINE_ctrl_cmd_string(e, "SO_PATH", "/path/to/libe_tbox_keystore.so", 0);
+ENGINE_ctrl_cmd_string(e, "SO_PATH", "/path/to/libengkeystore.so", 0);
 ENGINE_ctrl_cmd_string(e, "ID", "tbox_keystore", 0);
 ENGINE_ctrl_cmd_string(e, "LIST_ADD", "1", 0);
 ENGINE_ctrl_cmd_string(e, "LOAD", NULL, 0);
@@ -254,14 +254,14 @@ cd engine && mkdir -p build && cd build
 export PATH="/home/test0923/workspace/OP-TEE/optee400/toolchains/aarch64/bin:$PATH"
 cmake .. -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc
 make -j
-# 产物: libe_tbox_keystore.so
+# 产物: libengkeystore.so
 ```
 
 ## 部署
 
 ```bash
-cp libe_tbox_keystore.so /usr/lib/
-# 或: cp libe_tbox_keystore.so /usr/lib/engines-1.1/（openssl.cnf dynamic_path 需要）
+cp libengkeystore.so /usr/lib/
+# 或: cp libengkeystore.so /usr/lib/engines-1.1/（openssl.cnf dynamic_path 需要）
 ```
 
 ## 测试

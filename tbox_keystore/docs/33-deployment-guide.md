@@ -1,4 +1,4 @@
-# 33 — Dongle 部署手册（从零开始）
+# 33 — Dongle 部署手册
 
 > **读者**：负责把这套东西部署到实际设备上的工程师。
 > **前提**：不需要读过本项目的其他文档，照做即可。每一步都给了**验证方法**，
@@ -19,13 +19,13 @@
 "加密狗"有两种实现，本文都覆盖：
 
 ```
-┌──────────────────────────── 设备 (T-Box) ────────────────────────────┐
+┌───────────────────────────── 设备 (T-Box) ────────────────────────────┐
 │  keystore (命令行工具)                                                │
 │      │                                                                │
 │      ▼                                                                │
-│  /usr/lib/tbox/dongle/  ← 插件目录，"放进去 = 插狗"                    │
+│  /usr/lib/tbox/dongle/ ← 插件目录，--dongle dummy 就开这里的 dummy.so │
 │      ├── dummy.so    ┐                                                │
-│      └── remote.so   ┘  两个插件，任选其一或都装                       │
+│      └── remote.so   ┘  两个插件，任选其一或都装                      │
 └───────────────────────────────────────────────────────────────────────┘
         │                                    │
         │ (dummy)                            │ (remote)
@@ -144,12 +144,14 @@ make
 
 ```bash
 # 在设备上执行
-mkdir -p /usr/lib/tbox/dongle
+DGN=/usr/lib/tbox/dongle          # 默认插件目录（可换，见下方说明）
+mkdir -p "$DGN"
 
 # 按你的形态把插件拷进去：
-#   形态 A： cp dummy.so  /usr/lib/tbox/dongle/
-#   形态 B： cp remote.so /usr/lib/tbox/dongle/
-#   两个都装也可以（自动探测会按优先级选）
+#   形态 A： cp dummy.so  "$DGN/"
+#   形态 B： cp remote.so "$DGN/"
+# 两个都装也可以：--dongle dummy / --dongle remote 各开各的；
+# 不带 --dongle 时自动探测会按优先级选
 ```
 
 **验证**：
@@ -160,6 +162,52 @@ ls -l /usr/bin/keystore /usr/bin/dummy_genkey
 ls -l /usr/lib/tbox/dongle/
 keystore --help | head -3        # 能打印用法即部署成功
 ```
+
+### 3.1 插件目录与 `--dongle` 的解析规则
+
+`/usr/lib/tbox/dongle` 只是**编译期默认值**，运行时用 `TBOX_DONGLE_DIR` 覆盖：
+
+```bash
+export TBOX_DONGLE_DIR=/opt/my-plugins
+keystore --so-info
+```
+
+**`--dongle <name>` 直接打开 `<插件目录>/<name>.so`，不遍历目录**：
+
+| 你输入的命令 | 实际打开的文件 |
+|--------------|----------------|
+| `--dongle dummy` | `<插件目录>/dummy.so` |
+| `--dongle remote` | `<插件目录>/remote.so` |
+| （不带 `--dongle`） | 扫描目录下所有 `*.so`，按 `priority` 自动探测 |
+
+| 项 | 说明 |
+|---|---|
+| 覆盖方式 | 环境变量 `TBOX_DONGLE_DIR`（进程级，**不是**编译期） |
+| 只读一个目录 | **不支持**多个目录；`TBOX_DONGLE_DIR=/a:/b` 会被当成一个名叫 `/a:/b` 的目录 |
+| **名字不能带路径** | `--dongle /opt/x.so`、`--dongle ../x` **会被拒绝**——只接受纯文件名（`.so` 后缀由程序自己加，所以也别写 `.so`） |
+| 文件名必须叫 `<name>.so` | 名字就是文件名。若插件文件叫 `impl.so`，`--dongle impl` 才能找到它 |
+| 软狗密钥也要跟着走 | 形态 A 下 `dummy.key` 是**放在插件目录里**的（`<插件目录>/dummy.key`），目录一换、密钥位置也跟着换 |
+| `remote.conf` 也能跟着走 | 找不到 `/etc/tbox/dongle/remote.conf` 时，会找 `<插件目录>/remote.conf` |
+
+> 💡 **按名加载只会打开那一个文件**——目录里其他 `.so` 完全不会被碰。
+> 所以目录里放了一个无关的坏 `.so` 时，按名加载不受影响
+> （只有不带 `--dongle` 的自动探测才会去扫它）。
+
+> ### ⚠️ 别用 `LD_LIBRARY_PATH`——它对这个**不生效**
+>
+> 插件是**程序自己 `dlopen` 打开**的（按 `<目录>/<名字>.so` 的完整路径），
+> **不是**由动态链接器按库搜索路径解析的。所以：
+>
+> - 设 `LD_LIBRARY_PATH=/your/plugins` → **插件照样找不到**
+> - 正确做法是设 **`TBOX_DONGLE_DIR`**
+>
+> 为什么这么设计：自动探测要**扫描目录里所有 `*.so` 并逐个加载**。
+> 若接到 `LD_LIBRARY_PATH` 上（那里常有 `/usr/lib`、`/lib`），
+> 会去尝试加载几百个无关系统库——**慢、刷屏，而且扩大了攻击面**
+> （插件是"能拿狗私钥签名"的驱动，加载谁不该由通用库路径决定）。
+>
+> ✅ **`LD_LIBRARY_PATH` 仍然有用**，但作用在**另一件事**上：解析插件自身的依赖
+> （如 `dummy.so` 需要 `libssl.so.1.1` / `libcrypto.so.1.1`）。
 
 ---
 
@@ -187,7 +235,7 @@ keystore --provision-dongle --dongle dummy
 
 - **正常**：`[dongle] loaded plugin: dummy (RSA-2048)` → `Dongle registered in TA whitelist.`
 - **报 `Cannot open key file`**：密钥没放对位置（见 §4）
-- **报 `No dongle available`**：插件没加载（`dummy.so` 没在插件目录，或 ABI 不匹配）
+- **报 `No dongle available`**：插件没加载——确认 `<插件目录>/dummy.so` 存在（按名加载找的就是这个名字），或 ABI 不匹配。报错上一行会打印请求的完整路径和目录里已装的 `*.so`
 
 > 如果这一步报 `devices.json 不存在` 之类，那是形态 B 的东西，形态 A 用不到。
 
@@ -626,8 +674,13 @@ $CLI --so-lock
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
-| `No dongle available` | 插件没加载 | 检查 `/usr/lib/tbox/dongle/*.so` 是否存在、文件名是否 `dummy.so`/`remote.so` |
-| `... is not a dongle plugin` | 放了个普通 `.so` | 删掉无关文件 |
+| `No dongle available` | 插件没加载，或文件名不对 | ① 确认 `<插件目录>/<name>.so` 存在（`--dongle dummy` 找的是 `dummy.so`）② 上一行的报错会打印**请求的完整路径**和目录里已装的 `*.so` |
+| 插件放在别处、找不到 | 没设 `TBOX_DONGLE_DIR` | `export TBOX_DONGLE_DIR=<你的目录>`（**§3.1**） |
+| 设了 `LD_LIBRARY_PATH` 仍找不到插件 | **该变量对插件加载不生效** | 改用 `TBOX_DONGLE_DIR`（**§3.1** 有解释） |
+| **`--dongle dummy.so`** 报找不到 `dummy.so.so` | 名字里**不要带 `.so`**——后缀由程序自己加 | 改回 `--dongle dummy` |
+| **`--dongle /opt/x.so`** 被拒（`invalid backend name`） | **不接受路径**，只接受纯文件名（`[A-Za-z0-9._-]`） | 把插件放进 `TBOX_DONGLE_DIR`，然后用 `--dongle <文件名去掉.so>` |
+| 插件文件叫 `impl.so`，`--dongle impl` 找不到 | 旧版按插件**自报名字**匹配，新版按**文件名**解析 | 把文件改名为 `<name>.so`（**行为变更**，见 §3.1） |
+| `... is not a dongle plugin` | 该 `.so` 不是 dongle 插件（缺导出符号） | 换成正确的插件文件。按名加载时**只有被点名的那个**会被加载 |
 | `ABI mismatch (plugin=N, host=M)` | 插件与 CA 版本不配套 | **重新一起编译并同时部署** |
 | `Cannot open key file` (A) | `dummy.key` 位置/权限不对 | 放到 `/usr/lib/tbox/dongle/dummy.key` |
 | `warning: $TBOX_DUMMY_KEY=... is IGNORED` | 目录里的 `.key` 优先于该变量 | 换狗用 `TBOX_DONGLE_KEY_DUMMY` |
@@ -638,7 +691,7 @@ $CLI --so-lock
 | `TA rejected unlock: ...` | 签名无效／狗不在白名单 | ① 确认狗已登记（§17）② 确认狗是**同一把**③ 形态 B 看审计日志 |
 | `SO-PIN not provisioned` | 没执行 `--init-so-pin` | 见 §18 第 ② 步 |
 | `PIN not yet provisioned` | 没执行 `--init-pin` | 见 §18 第 ① 步 |
-| `TA is locked, write operation denied` | 写保护生效中 | 先 `--so-unlock` |
+| `TA denied the write: locked (run --so-unlock) or no PIN provisioned` —— 旧版二进制只显示裸 **`0xffff0001`**（= `TEE_ERROR_ACCESS_DENIED`） | 写保护生效中：TA 已灌装锁定，SO 未解锁 | 先 `--so-unlock`（§19）。若这台 TA **从未灌装**（PIN 未设），改为 `--init-pin`。用 `--so-info` 看当前状态 |
 | `SO cooldown active, N seconds remaining` | 连续 3 次 SO-PIN 错 | 等待 N 秒 |
 | `SO permanently bricked` | 累计 1000 次 SO-PIN 失败 | **设备报废**，无解 |
 
@@ -693,8 +746,8 @@ $CLI --so-lock
 | `/lib/optee_armtz/f8e9209a-….ta` | TA |
 | `/usr/bin/keystore` | 命令行工具（CA） |
 | `/usr/bin/dummy_genkey` | 密钥生成工具（无 openssl CLI 时用） |
-| `/usr/lib/tbox/dongle/dummy.so` | 插件：本地软狗 |
-| `/usr/lib/tbox/dongle/remote.so` | 插件：远程签名狗 |
+| `/usr/lib/tbox/dongle/dummy.so` | 插件：本地软狗（`--dongle dummy` 打开的就是它） |
+| `/usr/lib/tbox/dongle/remote.so` | 插件：远程签名狗（`--dongle remote`） |
 | `/usr/lib/tbox/dongle/dummy.key` | 软狗私钥（**形态 A**） |
 | `/etc/tbox/dongle/remote.conf` | 远程狗配置（形态 B） |
 | `/etc/tbox/dongle/id_ed25519` | 设备 SSH 身份（形态 B） |
@@ -746,7 +799,7 @@ tbox-dongle-sign audit --tail 20
 
 | 变量 | 作用 |
 |---|---|
-| `TBOX_DONGLE_DIR` | 插件目录（默认 `/usr/lib/tbox/dongle`） |
+| `TBOX_DONGLE_DIR` | **插件目录**（默认 `/usr/lib/tbox/dongle`）。换目录、或部署到非默认位置时必须设它；**只支持单个目录**。`--dongle <name>` 打开的就是 `<该目录>/<name>.so`（也决定 `dummy.key` / `remote.conf` 的位置）。插件加载**不看 `LD_LIBRARY_PATH`**（§3.1） |
 | `TBOX_DONGLE_KEY_DUMMY` | 指定软狗密钥，**优先级最高**（换狗测试用这个） |
 | `TBOX_DUMMY_KEY` | 旧接口指定软狗密钥（**会被插件目录里的 `dummy.key` 覆盖**） |
 | `TBOX_REMOTE_DONGLE_CONF` | 指定 `remote.conf` 路径 |

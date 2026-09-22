@@ -8,6 +8,11 @@ set(OPENSSL_DIR /home/test0923/workspace/OP-TEE/three_part/openssl/out)
 # loader below, which the CA has to link.
 add_subdirectory(dongle)
 
+# ---- OpenSSL ENGINE (libengkeystore.so) ----
+# Also pulled in here so the project-level build produces it too.
+# 各示例也会用 add_subdirectory 自行引入它（示例自包含，可单独构建）。
+add_subdirectory(engine)
+
 # ---- The CA (command-line tool) ----
 # dongle_factory.c is the plugin LOADER: it lives in dongle/ but is linked
 # into the CA, because the CA is what dlopen()s the plugins at run time.

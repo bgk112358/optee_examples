@@ -35,7 +35,7 @@
 | 文件 | 覆盖内容 | 程度 |
 |------|---------|:--:|
 | `dongle/dongle_ops.h` | 接口定义：caps 宏、函数指针表、工厂函数声明 | 全部 |
-| `dongle/dongle_factory.c` | `dongle_get()` 按名查找、`dongle_detect()` 自动检测、注册表遍历 | 全部 |
+| `dongle/dongle_factory.c` | `dongle_get()` 按名加载 `<TBOX_DONGLE_DIR>/<name>.so`（名字校验 + 路径去重）、`dongle_detect()` 目录扫描 + 自动检测、注册表遍历 | 全部 |
 | `dongle/dongle_dummy.c` | `probe()` / `open()` / `close()` / `sign()` / `get_pubkey()` / `get_serial()` / `get_attr()` | 全部 |
 | `dongle/dongle_yubikey.c` | `dongle_yubikey_get_ops()` weak symbol 注册，内部 `yk_*` 函数**未执行**（无硬件） | 仅链接 |
 
@@ -50,7 +50,23 @@ cmake .. && make
 （CMakeLists 用 `find_package(OpenSSL)`；**不要**指向 `three_part/openssl/out`，那是 aarch64 交叉产物，链接会失败）。
 
 它会同时编出 `dummy.so` 放在测试程序旁边，测试通过 `TBOX_DONGLE_DIR` 指向该目录，
-因此**插件加载链路也被覆盖**。
+因此**插件加载链路也被覆盖**——包括两条路径：按名加载（`dongle_get("dummy")` →
+`<dir>/dummy.so`）和目录扫描（`dongle_detect()`）。
+
+### 插件解析规则（本测试覆盖的契约）
+
+| 调用 | 行为 |
+|------|------|
+| `dongle_get("dummy")` | 加载 `<TBOX_DONGLE_DIR>/dummy.so`，**不遍历目录** |
+| `dongle_get("../x")` / `"/tmp/x"` / `"a/b"` / `""` / `NULL` | **拒绝**，返回 NULL（名字必须是纯文件名） |
+| `dongle_get("dummy.so")` | **不可用**——`.so` 后缀由加载器自己加，传进去会去找 `dummy.so.so` |
+| `dongle_detect()` | 扫描目录 + 按 `priority` 排序 + 逐个 `probe()` |
+
+> **为什么名字里不能有 `/`**：名字会被拼进 `<dir>/<name>.so`。允许 `/` 就能跳出插件目录
+> （`../evil`），而且会让**同一个文件拿到第二种路径拼写**，使加载器的路径去重失效、
+> 把同一个插件加载两次。这是安全边界，不是格式洁癖。
+>
+> **不是破坏性变更**：插件 ABI 版本未变，已部署的 `dummy.so` / `remote.so` **无需重编**。
 
 ### 运行
 
@@ -64,7 +80,7 @@ cmake .. && make
 
 | # | 用例 | 检查点 | 为什么重要 |
 |:--:|------|------|------|
-| 1 | **factory** | `dongle_get("dummy")` 非 NULL 且 name 正确；`dongle_get("nonexistent")` 返回 NULL；4 个 `DONGLE_CAP_*` 标志位全部置位；7 个函数指针全部非 NULL | 接口契约：调用方依赖 caps 判断能力、依赖 name 区分后端、依赖函数指针非空防止崩溃 |
+| 1 | **factory** | `dongle_get("dummy")` 非 NULL 且 name 正确；`dongle_get("nonexistent")` 返回 NULL；**名字校验**：`"../dummy"` / `"/tmp/dummy"` / `"sub/dummy"` / `".hidden"` / `""` / `NULL` / 超长(70 字符) / `"dummy.so"` **全部返回 NULL**；4 个 `DONGLE_CAP_*` 标志位全部置位；7 个函数指针全部非 NULL | 接口契约：调用方依赖 caps 判断能力、依赖 name 区分后端、依赖函数指针非空防止崩溃。名字校验那组是**安全边界**测试——防止路径逃逸与重复加载 |
 | 2 | **probe_no_key** | 删除密钥文件 + 清除环境变量 → `probe()` 返回 0 | 后端能正确报告"硬件/密钥不在位"，调用方据此给出友好报错 |
 | 3 | **open_close** | `probe()`=1, `open()`=0, ctx 非空, `close()` 不崩溃 | 标准生命周期，测试密钥加载和资源释放是否正确 |
 | 4 | **sign** | 32 字节 digest 签名成功，长度 **256**；16 字节 digest **被拒绝**（返回非 0） | 契约强制执行：RSA-2048 只签 SHA-256 摘要；长度错误应拒绝而非崩溃 |
@@ -72,7 +88,13 @@ cmake .. && make
 | 6 | **get_pubkey** | 公钥 DER 被 `d2i_PUBKEY()` 成功解析，`EVP_PKEY_id()==EVP_PKEY_RSA` | 返回的公钥格式正确，可被 TA 侧解析和使用 |
 | 7 | **serial_attr** | `get_serial()`=`0xDEAD0001`；`get_attr("name")`=`"dummy"`；`get_attr("model")` 非空；`get_attr("nonexistent")` 返回 -1 | 元数据查询接口完整，不存在属性正确报错 |
 | 8 | **double_open** | `open()` 两次得到不同 ctx；`close(NULL)` 安全不崩溃 | 资源隔离：多次打开互不干扰；析构函数安全处理 NULL |
-| 9 | **detect** | `dongle_detect()` 在有 dummy key 时返回非 NULL，`probe()`=1 | 自动检测链正常工作（插件扫描 + 优先级排序） |
+| 9 | **detect** | `dongle_detect()` 在有 dummy key 时返回非 NULL，`probe()`=1 | 自动检测链正常工作（插件扫描 + 优先级排序）。**此用例依赖路径去重**：此时 `dummy.so` 已被用例 1 按名加载过，扫描必须复用而不是再 `dlopen` 一次 |
+
+> **去重的手工验证**（用例 1 按名加载 + 用例 9 扫描，同一文件不得加载两次）：
+> ```bash
+> ./dongle_test 2>&1 | grep -c "loaded plugin: dummy"    # 期望 1
+> ```
+> 若输出 >1，说明路径去重失效，同一个插件会占用多个注册表槽位。
 
 ### 关键实现细节
 
@@ -85,6 +107,8 @@ cmake .. && make
 ### 本测试不覆盖
 
 - **YubiKey 真实硬件** — dummy 后端用本地文件模拟，YubiKey 的 `yk_probe()`/`yk_sign()` 等仅链接未执行
+- **按任意路径加载插件** — **不支持**该用法（`--dongle /path/to/x.so` 会被名字校验拒绝）。插件必须位于 `TBOX_DONGLE_DIR` 下且命名为 `<name>.so`
+- **`ops->name` 与文件名不一致** — 只验证了正常的同名情形；不一致时加载器会告警但照常返回，这条路径未做断言
 - **TA 侧 SO-PIN 逻辑** — 不测试 `CMD_SO_UNLOCK_REQ`/`CMD_SO_UNLOCK_CONFIRM`、失败计数器、dongle 白名单、冷却机制
 - **CA CLI SO 命令** — 不测试 `do_so_unlock()` 两阶段协议、参数解析
 - **多线程/并发** — 所有测试单线程顺序执行
