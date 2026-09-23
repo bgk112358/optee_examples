@@ -59,6 +59,19 @@ struct remote_cfg {
 	int  port;
 	char key[512];		/* device's SSH private key */
 	char known_hosts[512];
+	/*
+	 * 可选：指定 ssh **客户端**配置文件，以 `ssh -F <path>` 传入。
+	 * 不设（默认）= 用系统的 /etc/ssh/ssh_config。
+	 *
+	 * 为什么需要它：只读或写得有问题的 rootfs 上，/etc/ssh/ssh_config 里
+	 * 混进一个**服务端**选项（如 PermitRootLogin）就会让客户端直接终止
+	 * （"Bad configuration option"，退出码 255）——而我们无权改那个文件。
+	 * 指向一份自己可控的配置即可隔离这种环境问题。
+	 *
+	 * 刻意**不默认 `-F /dev/null`**：那会把管理员在系统配置里做的安全加固
+	 * （Ciphers / KexAlgorithms / MACs 限制）一并丢掉。
+	 */
+	char ssh_config[512];
 	int  timeout_ms;
 	/*
 	 * Prefix for the remote command line.  LEAVE EMPTY for the recommended
@@ -115,6 +128,7 @@ static void cfg_set_kv(const char *k, const char *v)
 	else if (!strcmp(k, "port"))        g_cfg.port = atoi(v);
 	else if (!strcmp(k, "key"))         str_set(g_cfg.key, sizeof(g_cfg.key), v);
 	else if (!strcmp(k, "known_hosts")) str_set(g_cfg.known_hosts, sizeof(g_cfg.known_hosts), v);
+	else if (!strcmp(k, "ssh_config"))  str_set(g_cfg.ssh_config, sizeof(g_cfg.ssh_config), v);
 	else if (!strcmp(k, "timeout_ms"))  g_cfg.timeout_ms = atoi(v);
 	else if (!strcmp(k, "remote_cmd"))  str_set(g_cfg.remote_cmd, sizeof(g_cfg.remote_cmd), v);
 	/* cloud (http_mtls) — reserved, parsed so nothing is silently dropped */
@@ -192,6 +206,7 @@ static void cfg_load(void)
 	cfg_env_override("PORT", "port");
 	cfg_env_override("KEY", "key");
 	cfg_env_override("KNOWN_HOSTS", "known_hosts");
+	cfg_env_override("SSH_CONFIG", "ssh_config");
 	cfg_env_override("TIMEOUT_MS", "timeout_ms");
 	cfg_env_override("CMD", "remote_cmd");
 	cfg_env_override("ENDPOINT", "endpoint");
@@ -244,7 +259,14 @@ static int run_capture(char *const argv[], char *out, size_t out_max, int timeou
 		if (dup2(pfd[1], STDOUT_FILENO) < 0)
 			_exit(127);
 		close(pfd[1]);
-		execv(argv[0], argv);
+		/*
+		 * execvp，不是 execv —— 必须走 PATH 查找。
+		 * ssh_bin 默认是裸名 "ssh"（可能是 "dbclient"、或任意带路径的
+		 * 绝对路径）；execv 只按字面路径打开，裸名会去找 "./ssh" 而失败
+		 * （退出码 127），即使 /usr/bin/ssh 明明存在。
+		 * execvp 的语义正好合适：含 '/' 按路径处理，不含则搜 PATH。
+		 */
+		execvp(argv[0], argv);
 		_exit(127);	/* exec failed (e.g. ssh not found) */
 	}
 
@@ -308,6 +330,20 @@ static int run_capture(char *const argv[], char *out, size_t out_max, int timeou
 	else
 		rc = -1;
 
+	/*
+	 * 127 是 "command not found" 的通用退出码。本地 exec 失败会 _exit(127)，
+	 * 远端的命令不存在也会回 127 —— 两者现象一样，但排查方向完全不同，
+	 * 所以这里把两条路都点出来，别让人对着裸的 rc=127 猜。
+	 */
+	if (rc == 127)
+		fprintf(stderr,
+			"[remote] 退出码 127（命令不存在）：\n"
+			"         ① 本机找不到 SSH 客户端 «%s» —— 先查: which %s\n"
+			"         ② 或路径对但不可执行 / 缺动态库\n"
+			"         ③ 或本机正常、而是【远端】没有该子命令\n"
+			"         改客户端: remote.conf 里 ssh_bin = <可用客户端>\n",
+			argv[0], argv[0]);
+
 	return rc;
 }
 
@@ -338,6 +374,15 @@ static int transport_ssh_call(const char *subcmd, const char *arg,
 		 g_cfg.timeout_ms > 0 ? (g_cfg.timeout_ms + 999) / 1000 : 2);
 
 	argv[n++] = g_cfg.ssh_bin;
+	/*
+	 * 可选：用自己那份 ssh 客户端配置，绕开 /etc/ssh/ssh_config。
+	 * 只读 rootfs 上改不了系统配置，而里面一个脏行（如服务端选项
+	 * PermitRootLogin）就会让客户端直接终止、退 255。见 remote.conf.example。
+	 */
+	if (g_cfg.ssh_config[0]) {
+		argv[n++] = "-F";
+		argv[n++] = g_cfg.ssh_config;
+	}
 	argv[n++] = "-o"; argv[n++] = "BatchMode=yes";
 	argv[n++] = "-o"; argv[n++] = "NumberOfPasswordPrompts=0";
 	/*

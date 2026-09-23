@@ -135,12 +135,24 @@
 </li>
 <li><a href="#_5">第二部分：设备端</a><ul>
 <li><a href="#13-ssh">13. 生成设备专属 SSH 身份（每台设备一把，不要共用）</a></li>
-<li><a href="#14-known_hosts">14. 预置 known_hosts（这步不能省）</a></li>
-<li><a href="#15-remoteconf">15. 写设备端配置 remote.conf</a></li>
-<li><a href="#remote_cmd">⚠️ remote_cmd 为什么必须留空</a></li>
-<li><a href="#16">16. 设备端连通性自检</a></li>
+<li><a href="#ssh-keygen">🔧 设备上没有 ssh-keygen 怎么办</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li><a href="#1-ssh-keygen">① 在上位机（或任何有 ssh-keygen 的机器）上生成</a></li>
+<li><a href="#2_1">② 只把【私钥】拷到设备（公钥留在上位机）</a></li>
+<li><a href="#3_1">③ 设备上收紧权限</a><ul>
+<li><a href="#14-known_hosts">14. 预置 known_hosts（这步不能省）</a></li>
+<li><a href="#15-remoteconf">15. 写设备端配置 remote.conf</a></li>
+<li><a href="#key-known_hosts">⚠️ key 和 known_hosts 没有默认值，两个都必须写</a></li>
+<li><a href="#etcsshssh_config-ssh_config">🔧 /etc/ssh/ssh_config 有问题、又改不动？用 ssh_config 绕开</a></li>
+</ul>
+</li>
+<li><a href="#1_1">① 写一份干净配置（放你可写的地方，比如插件目录）</a></li>
+<li><a href="#2-remoteconf">② 在 remote.conf 里指过去</a><ul>
+<li><a href="#remote_cmd">⚠️ remote_cmd 为什么必须留空</a></li>
+<li><a href="#16">16. 设备端连通性自检</a></li>
 <li><a href="#_6">第三部分：登记白名单与首次灌装</a><ul>
 <li><a href="#17-ta">17. 把签名服务器的公钥登记进 TA 白名单</a></li>
 <li><a href="#18">18. 首次灌装完整流程（顺序不能变）</a></li>
@@ -319,9 +331,16 @@
 <td>已装库</td>
 <td><code>libssl.so.1.1</code> / <code>libcrypto.so.1.1</code>（CA 和插件要用；<strong>一般镜像里已有</strong>）</td>
 </tr>
+<tr>
+<td><strong>SSH 客户端</strong>（仅形态 B）</td>
+<td>设备要能主动 SSH 到上位机。<strong>精简 rootfs 往往没有</strong>——先 <code>which ssh dbclient</code> 确认；没有就装 dropbear（<code>dbclient</code> 很小）</td>
+</tr>
 </tbody>
 </table>
 <blockquote>
+<p>⚠️ <strong>形态 B 的隐性前提</strong>：<code>remote.so</code> 会去 <strong>exec 一个 SSH 客户端</strong>。
+没有的话报 <code>getpub failed (rc=127)</code>——127 就是"命令不存在"。
+装了 dropbear 的话，记得把 <code>ssh_bin</code> 改成 <code>dbclient</code>（见 §15）。</p>
 <p>⚠️ 设备上<strong>通常没有 <code>openssl</code> 命令行</strong>——本文所有需要生成密钥的地方，
 都已改用随本方案提供的 <code>dummy_genkey</code> 工具，不依赖 <code>openssl</code> CLI。</p>
 </blockquote>
@@ -453,6 +472,20 @@ ls -l /usr/bin/keystore /usr/bin/dummy_genkey
 ls -l /oemdata/opt/optee/dongle/
 keystore --help | head -3        # 能打印用法即部署成功
 </code></pre>
+<p><strong>再确认拷的是新版</strong>（旧版本有几个已修的 bug，见 §24）：</p>
+<pre><code class="language-bash"># 新版 remote.so 才有的特征
+grep -ac &quot;退出码 127&quot; /oemdata/opt/optee/dongle/remote.so     # ≥1 = 新版
+grep -ac &quot;ssh_config&quot;  /oemdata/opt/optee/dongle/remote.so    # ≥1 = 新版
+
+# 新版 dummy.so 才有的特征（旧的仍在找 EC 密钥）
+strings /oemdata/opt/optee/dongle/dummy.so | grep -c &quot;not an RSA key&quot;   # ≥1 = 新版
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>设备上残留的旧插件要清掉</strong>。本文把默认插件目录改成了
+<code>/oemdata/opt/optee/dongle</code>，但 <code>/usr/lib/tbox/dongle</code> 下的旧文件<strong>不会自动失效</strong>——
+如果你设了 <code>TBOX_DONGLE_DIR</code> 或改了回去，旧插件又会被加载。
+建议删掉或改名，避免"以为在跑新版、其实在跑旧的"。</p>
+</blockquote>
 <h3 id="31-dongle">3.1 插件目录与 <code>--dongle</code> 的解析规则</h3>
 <p><code>/oemdata/opt/optee/dongle</code> 只是<strong>编译期默认值</strong>，运行时用 <code>TBOX_DONGLE_DIR</code> 覆盖：</p>
 <pre><code class="language-bash">export TBOX_DONGLE_DIR=/opt/my-plugins
@@ -578,6 +611,17 @@ python3 -c &quot;import cryptography; print('cryptography', cryptography.__versi
 sudo cp tbox-dongle-sign /opt/tbox-dongle-sign/
 sudo chmod 755 /opt/tbox-dongle-sign/tbox-dongle-sign
 </code></pre>
+<p><strong>验证（顺便确认拷的是新版）</strong>：</p>
+<pre><code class="language-bash">/opt/tbox-dongle-sign/tbox-dongle-sign info | head -2
+</code></pre>
+<pre class="ascii-diagram"><code>service=tbox-dongle-sign
+version=1.1.1          ← 版本号随功能更新；比本文旧的话建议换新
+</code></pre>
+<blockquote>
+<p>💡 <strong>为什么要看版本号</strong>：这个脚本改过几轮（错误提示、<code>ssh_config</code> 支持等）。
+老版本报的错常常<strong>指向错误的方向</strong>（例如把"权限问题"报成"文件不存在"）。
+排障前先确认版本，能省很多来回。</p>
+</blockquote>
 <h3 id="8">8. 生成签名私钥（<strong>这是整套系统的信任根</strong>）</h3>
 <p>在上位机上执行（<strong>不经过 SSH</strong>，管理员本地操作）：</p>
 <pre><code class="language-bash">sudo /opt/tbox-dongle-sign/tbox-dongle-sign genkey
@@ -808,41 +852,131 @@ sudo -u tbox-signer ssh -i &lt;某台设备的私钥&gt; localhost \
 <hr />
 <h2 id="_5">第二部分：设备端</h2>
 <h3 id="13-ssh">13. 生成设备专属 SSH 身份（<strong>每台设备一把，不要共用</strong>）</h3>
-<pre><code class="language-bash">mkdir -p -m 700 /etc/tbox/dongle
-ssh-keygen -t ed25519 -N &quot;&quot; -f /etc/tbox/dongle/id_ed25519
-cat /etc/tbox/dongle/id_ed25519.pub
+<blockquote>
+<p>📁 <strong>文件放哪</strong>：下面统一用 <code>/oemdata/opt/optee/dongle/</code>（<strong>插件目录</strong>）。
+因为<strong>只读 rootfs 的机型很常见</strong>，<code>/etc</code> 往往写不进去。只要 <code>remote.conf</code> 里的
+<code>key</code> 指对，放哪都行；<code>/etc</code> 可写且习惯放那儿的话，换成 <code>/etc/tbox/dongle/</code> 即可。</p>
+</blockquote>
+<pre><code class="language-bash">DDIR=/oemdata/opt/optee/dongle
+mkdir -p -m 700 &quot;$DDIR&quot;
+ssh-keygen -t ed25519 -N &quot;&quot; -f &quot;$DDIR/id_ed25519&quot;
+chmod 600 &quot;$DDIR/id_ed25519&quot;
+cat &quot;$DDIR/id_ed25519.pub&quot;        # ← 这一整行要交给上位机管理员
 </code></pre>
 <ul>
-<li>把 <strong><code>.pub</code> 的内容</strong>交给上位机管理员，写进 §9 的 <code>authorized_keys</code></li>
-<li><strong><code>.pub</code> 的指纹</strong>（<code>ssh-keygen -lf /etc/tbox/dongle/id_ed25519.pub</code>）填进 §10 的 <code>fingerprint</code></li>
+<li>把 <strong><code>.pub</code> 的内容</strong>交给上位机管理员，写进 §9.2 的 <code>authorized_keys</code></li>
+<li><strong><code>.pub</code> 的指纹</strong>（<code>ssh-keygen -lf "$DDIR/id_ed25519.pub"</code>）填进 §10 的 <code>fingerprint</code></li>
 </ul>
 <blockquote>
+<h3 id="ssh-keygen">🔧 设备上没有 <code>ssh-keygen</code> 怎么办</h3>
+<p>精简 rootfs 常常没有 openssh 的这套工具（<code>ssh-keygen</code> / <code>ssh-keyscan</code> 都没有）。
+<strong>在别处生成，只把私钥拷进设备</strong>：</p>
+<p>```bash</p>
+<h1 id="1-ssh-keygen">① 在上位机（或任何有 ssh-keygen 的机器）上生成</h1>
+<p>ssh-keygen -t ed25519 -N "" -f ./id_ed25519 -C "device-001"
+ssh-keygen -lf ./id_ed25519.pub          # 记下这个指纹 → 填 §10
+cat ./id_ed25519.pub                     # 这一行 → 上位机 authorized_keys（§9.2）</p>
+<h1 id="2_1">② 只把【私钥】拷到设备（公钥留在上位机）</h1>
+<p>scp ./id_ed25519 root@&lt;设备IP&gt;:/oemdata/opt/optee/dongle/</p>
+<h1 id="3_1">③ 设备上收紧权限</h1>
+<p>chmod 600 /oemdata/opt/optee/dongle/id_ed25519
+```</p>
+<p>⚠️ <strong>安全代价要意识到</strong>：私钥在设备外产生过，<strong>灌装的人因此可以冒充这台设备</strong>。
+威胁模型不能接受的话，就得给设备刷一个带 <code>ssh-keygen</code> 的 rootfs。</p>
+<p>好消息是这不是致命弱点——真正的安全边界是 <strong>TA 内的验签 + 白名单</strong>（§17），
+SSH 身份只负责"是哪台设备在请求"。但<strong>每台设备仍要各生成一把，不能共用</strong>。</p>
 <p><strong>为什么每台设备要独立</strong>：服务端靠这个身份区分"是哪台设备在请求"。
 如果所有设备共用一个身份，<strong>一台设备被攻陷就等于所有设备可被签名</strong>。</p>
 </blockquote>
 <h3 id="14-known_hosts">14. 预置 <code>known_hosts</code>（<strong>这步不能省</strong>）</h3>
 <p>插件<strong>强制校验服务器主机密钥</strong>（<code>StrictHostKeyChecking=yes</code>），没有它连不上：</p>
-<pre><code class="language-bash">ssh-keyscan -p 22 &lt;上位机地址&gt; &gt; /etc/tbox/dongle/known_hosts
-chmod 600 /etc/tbox/dongle/known_hosts
+<pre class="ascii-diagram"><code>No ECDSA host key is known for &lt;上位机地址&gt; and you have requested strict checking.
+Host key verification failed.
+[remote] getpub failed (rc=255)
 </code></pre>
 <blockquote>
 <p><strong>为什么强制</strong>：不校验主机密钥，攻击者就能冒充签名服务器骗设备把 challenge 发过去。</p>
-<p>⚠️ <strong>上线前请与上位机管理员核对这个文件的指纹</strong>，确保拿到的是真服务器的密钥。</p>
 </blockquote>
+<h4 id="141">14.1 生成（<strong>推荐在上位机上生成，再拷到设备</strong>）</h4>
+<p><strong>设备上通常没有 <code>ssh-keyscan</code></strong>（跟 <code>ssh-keygen</code> 一样，精简 rootfs 都没有）。
+最可靠的做法：<strong>在上位机上直接读它自己的主机密钥文件</strong>——不经网络，没有中间人空间。</p>
+<pre><code class="language-bash"># 【在上位机上执行】把 &lt;上位机地址&gt; 换成设备访问它时用的那个地址
+cd /tmp
+&gt; known_hosts
+for t in ed25519 ecdsa rsa; do
+  f=/etc/ssh/ssh_host_${t}_key.pub
+  [ -f &quot;$f&quot; ] &amp;&amp; echo &quot;&lt;上位机地址&gt; $(cat $f)&quot; &gt;&gt; known_hosts
+done
+cat known_hosts
+</code></pre>
+<p>输出形如：</p>
+<pre class="ascii-diagram"><code>192.168.0.107 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... root@ubuntu-vm
+192.168.0.107 ecdsa-sha2-nistp256 AAAAE2VjZHNh... root@ubuntu-vm
+192.168.0.107 ssh-rsa AAAAB3NzaC1yc2E... root@ubuntu-vm
+</code></pre>
+<blockquote>
+<p><code>known_hosts</code> 的格式是 <code>&lt;主机&gt; &lt;类型&gt; &lt;base64&gt; [注释]</code>——
+<strong>行尾那个 <code>root@ubuntu-vm</code> 是注释，写什么都行</strong>，不影响匹配。</p>
+</blockquote>
+<p><strong>备选</strong>：上位机有 <code>ssh-keyscan</code> 的话也能用（相当于自己连自己，多走一遍网络）：</p>
+<pre><code class="language-bash">ssh-keyscan -p 22 &lt;上位机地址&gt; &gt; ./known_hosts
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>端口不是 22 时，known_hosts 里必须写方括号形式</strong>，否则匹配不上：
+<code>[192.168.0.107]:2222 ssh-ed25519 AAAA...</code>
+<code>ssh-keyscan -p 2222</code> 会自动输出这种格式；手工拼的话要自己加方括号。</p>
+</blockquote>
+<h4 id="142">14.2 ⚠️ 核对指纹（<strong>不能跳过</strong>）</h4>
+<p><code>ssh-keyscan</code>（甚至读文件的过程）都可能被中间人干扰，<strong>上线前必须比对</strong>：</p>
+<pre><code class="language-bash"># 在生成 known_hosts 的那台机器上
+ssh-keygen -lf known_hosts
+</code></pre>
+<pre><code class="language-bash"># 在上位机上，取它自己的真实指纹
+ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+</code></pre>
+<p><strong>两边 SHA256 必须逐字一致。不一致 = 有人在冒充，绝不能往下走。</strong></p>
+<h4 id="143">14.3 拷到设备</h4>
+<pre><code class="language-bash">scp known_hosts root@&lt;设备IP&gt;:/oemdata/opt/optee/dongle/known_hosts
+</code></pre>
+<pre><code class="language-bash"># 设备上确认
+chmod 600 /oemdata/opt/optee/dongle/known_hosts
+cat /oemdata/opt/optee/dongle/known_hosts      # 有内容，且行首是上位机地址
+</code></pre>
+<p>对应 <code>remote.conf</code> 的 <code>known_hosts = /oemdata/opt/optee/dongle/known_hosts</code>（见 §15）。</p>
 <h3 id="15-remoteconf">15. 写设备端配置 <code>remote.conf</code></h3>
-<pre><code class="language-bash">cp /path/to/remote.conf.example /etc/tbox/dongle/remote.conf
-vi /etc/tbox/dongle/remote.conf
+<p>文件放哪由<strong>查找顺序</strong>决定（从上往下，第一个可读的生效）：</p>
+<pre class="ascii-diagram"><code>① $TBOX_REMOTE_DONGLE_CONF              ← 环境变量显式指定
+② &lt;插件目录&gt;/remote.conf                 ← /oemdata/opt/optee/dongle/remote.conf
+③ /etc/tbox/dongle/remote.conf           ← 默认；/etc 只读就写不了
 </code></pre>
-<p>最小配置（其余保持默认）：</p>
-<pre><code class="language-ini">transport = ssh
-host      = &lt;上位机地址&gt;
-user      = tbox-signer
-port      = 22
-key         = /etc/tbox/dongle/id_ed25519
-known_hosts = /etc/tbox/dongle/known_hosts
+<blockquote>
+<p>📁 <strong>只读 rootfs 的机型请一律用 ②</strong>——<code>/etc</code> 写不进去。
+（<code>key</code> / <code>known_hosts</code> / <code>ssh_config</code> 这些配套文件同理，放插件目录最省事。）</p>
+</blockquote>
+<pre><code class="language-bash">cp /path/to/remote.conf.example /oemdata/opt/optee/dongle/remote.conf
+vi /oemdata/opt/optee/dongle/remote.conf
+</code></pre>
+<p><strong>最小配置</strong>（其余保持默认）：</p>
+<pre><code class="language-ini">transport   = ssh
+host        = &lt;上位机地址&gt;
+user        = tbox-signer
+port        = 22
+key         = /oemdata/opt/optee/dongle/id_ed25519        # §13 生成的设备身份私钥
+known_hosts = /oemdata/opt/optee/dongle/known_hosts       # §14 预置的主机密钥
+ssh_config  =                                              # 可选，一般留空；见下方
 timeout_ms  = 2000
-remote_cmd  =                    # ← 留空！见下方说明
+remote_cmd  =                                              # ← 留空！见下方说明
 </code></pre>
+<blockquote>
+<h3 id="key-known_hosts">⚠️ <code>key</code> 和 <code>known_hosts</code> <strong>没有默认值，两个都必须写</strong></h3>
+<p>插件里这两个字段默认是<strong>空字符串</strong>：</p>
+<ul>
+<li><code>key</code> 空 → <strong>不加 <code>-i</code></strong> → ssh 去找它自己的默认身份（<code>~/.ssh/id_rsa</code> 之类），设备上通常没有</li>
+<li><code>known_hosts</code> 空 → 用 ssh 默认的 <code>~/.ssh/known_hosts</code> → 同样不存在</li>
+</ul>
+<p><code>remote.conf.example</code> 里写的 <code>/etc/tbox/dongle/...</code> <strong>只是示例路径，不是默认值</strong>。</p>
+</blockquote>
 <table>
 <thead>
 <tr>
@@ -872,12 +1006,41 @@ remote_cmd  =                    # ← 留空！见下方说明
 <td>SSH 客户端程序。<strong>嵌入式上常是 dropbear 的 <code>dbclient</code> 而不是 <code>ssh</code></strong>，按实际改</td>
 </tr>
 <tr>
+<td><code>ssh_config</code></td>
+<td><strong>可选</strong>。指定 ssh 客户端配置文件（<code>ssh -F &lt;该文件&gt;</code>），绕开系统的 <code>/etc/ssh/ssh_config</code>。见下方</td>
+</tr>
+<tr>
 <td><code>timeout_ms</code></td>
 <td>单次调用总超时；<code>probe</code>（探测）也用它，别设太大</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
+<h3 id="etcsshssh_config-ssh_config">🔧 <code>/etc/ssh/ssh_config</code> 有问题、又改不动？用 <code>ssh_config</code> 绕开</h3>
+<p><strong>症状</strong>：设备上 <code>which ssh</code> 明明有，却报
+<code>/etc/ssh/ssh_config: line N: Bad configuration option: permitrootlogin
+/etc/ssh/ssh_config: terminating, 1 bad configuration options
+[remote] getpub failed (rc=255)</code></p>
+<p><strong>原因</strong>：系统 ssh <strong>客户端</strong>配置里混进了<strong>服务端</strong>选项（<code>PermitRootLogin</code> 属于
+<code>sshd_config</code>，不是 <code>ssh_config</code>）。OpenSSH 客户端遇到不认识的选项会<strong>直接终止</strong>
+（退出码 255）——而且这台设备上<strong>任何 ssh 命令都会挂</strong>。</p>
+<p><strong>改不动系统文件时</strong>（只读 rootfs 常见），指向一份自己可控的配置即可：</p>
+<p>```bash</p>
+<h1 id="1_1">① 写一份干净配置（放你可写的地方，比如插件目录）</h1>
+<p>cat &gt; /oemdata/opt/optee/dongle/ssh_config &lt;&lt;'EOF'
+Host *
+    IdentitiesOnly yes
+    ServerAliveInterval 5
+EOF</p>
+<h1 id="2-remoteconf">② 在 remote.conf 里指过去</h1>
+<p>echo 'ssh_config = /oemdata/opt/optee/dongle/ssh_config' &gt;&gt; /oemdata/opt/optee/dongle/remote.conf
+```</p>
+<p>⚠️ <strong>这个文件会「取代」系统配置</strong>，不是在它基础上追加。所以别只写一行了事——
+如果你们的系统配置里有安全加固项（<code>Ciphers</code> / <code>KexAlgorithms</code> / <code>MACs</code>），
+要一并抄进来，否则等于把它们关掉了。</p>
+<p>也可以临时用环境变量验证，不必改配置：
+<code>bash
+TBOX_REMOTE_DONGLE_SSH_CONFIG=/path/to/clean_config keystore --provision-dongle --dongle remote</code></p>
 <h3 id="remote_cmd">⚠️ <code>remote_cmd</code> 为什么必须留空</h3>
 <p>配合 §9 的 sshd 强制命令部署，<strong>sshd 负责执行服务</strong>，客户端敲的整串会作为
 <code>$SSH_ORIGINAL_COMMAND</code> 交给它。所以插件必须<strong>只发子命令</strong>（如 <code>getpub</code>）。</p>
@@ -893,10 +1056,50 @@ remote_cmd  =                    # ← 留空！见下方说明
 <ul>
 <li><strong>正常</strong>：<code>[remote] connected: tbox-signer@&lt;上位机&gt; (294-byte pubkey)</code></li>
 <li><strong><code>Cannot open known_hosts</code> / <code>Host key verification failed</code></strong> → 回到 §14</li>
-<li><strong><code>Permission denied</code></strong> → 设备公钥没加到上位机 authorized_keys（§9），或 <code>key</code> 路径不对</li>
+<li><strong><code>No ECDSA host key is known for &lt;地址&gt;</code></strong> → 同上，<code>known_hosts</code> 里没有这台上位机 → §14</li>
+<li><strong><code>getpub failed (rc=127)</code></strong> → <strong>SSH 客户端</strong>找不到或不可执行 → 查 <code>which ssh dbclient</code>，
+  按实际改 <code>ssh_bin</code>（§15）。新版插件会额外打印三条排查方向</li>
+<li><strong><code>Bad configuration option: xxx</code> + <code>rc=255</code></strong> → 系统 <code>/etc/ssh/ssh_config</code> 里有<strong>服务端</strong>选项。
+  改得动就改掉那行；<strong>只读 rootfs 改不动就用 <code>ssh_config = &lt;你的配置&gt;</code> 绕开</strong>（§15）</li>
+<li><strong><code>Permission denied</code></strong> → 设备公钥没加到上位机 authorized_keys（§9.2），或 <code>key</code> 路径不对</li>
+<li><strong><code>ssh: host not configured</code></strong> → <code>remote.conf</code> 没找到或 <code>host</code> 没填（§15 有查找顺序）</li>
 <li><strong><code>RESERVED, not implemented</code></strong> → 配置文件里 <code>transport</code> 写成了 <code>http_mtls</code>，改成 <code>ssh</code></li>
 <li><strong>卡住约 2 秒后失败</strong> → 网络不通或上位机 sshd 没起（<code>timeout_ms</code> 生效，属正常保护）</li>
 </ul>
+<blockquote>
+<p>💡 <strong>一条命令同时验三件事</strong>：上面的报错<strong>位置</strong>就能区分层——</p>
+<table>
+<thead>
+<tr>
+<th>报错里的前缀</th>
+<th>说明卡在哪一层</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>[dongle]</code></td>
+<td>插件加载（<code>.so</code> 路径 / ABI）</td>
+</tr>
+<tr>
+<td><code>[remote]</code></td>
+<td>SSH 传输（客户端、配置、网络、认证）</td>
+</tr>
+<tr>
+<td><code>[dummy]</code></td>
+<td>本地软狗（<code>dummy.key</code> 读取）</td>
+</tr>
+<tr>
+<td><code>keystore:</code> / <code>keystore.new:</code></td>
+<td>CA 侧（没拿到 ops，或 TA 返回错误）</td>
+</tr>
+<tr>
+<td>无前缀、纯 hex</td>
+<td><strong>TA 侧</strong>（<code>0xffff0001</code> 之类）——最靠近业务</td>
+</tr>
+</tbody>
+</table>
+<p>从 <code>[dongle]</code> 一路看到纯 hex，说明链路一层层都通了。</p>
+</blockquote>
 <hr />
 <h2 id="_6">第三部分：登记白名单与首次灌装</h2>
 <h3 id="17-ta">17. 把签名服务器的公钥登记进 TA 白名单</h3>
@@ -1218,6 +1421,16 @@ $CLI --so-lock
 <td>在上位机执行 <code>genkey</code>（§8）</td>
 </tr>
 <tr>
+<td><code>getpub failed (rc=127)</code> (B) —— <strong>旧版插件会这么报</strong>；新版会附上三条排查方向</td>
+<td><code>rc=127</code> = "命令不存在"。① 设备上找不到 SSH 客户端 ② 路径对但不可执行 ③ 或<strong>远端</strong>没有该子命令</td>
+<td><code>which ssh dbclient</code>；装了 dropbear 就把 <code>ssh_bin</code> 改成 <code>dbclient</code>（§15）。<strong>旧版插件另有 bug：用 <code>execv</code> 而非 <code>execvp</code>，裸名不做 PATH 查找 → 即使 <code>/usr/bin/ssh</code> 存在也报 127</strong>，须升级插件</td>
+</tr>
+<tr>
+<td><strong><code>/etc/ssh/ssh_config: line N: Bad configuration option: ...</code> + <code>getpub failed (rc=255)</code></strong> (B)</td>
+<td>系统 ssh <strong>客户端</strong>配置里混了<strong>服务端</strong>选项（如 <code>PermitRootLogin</code>）→ 客户端直接终止，退 255。<strong>这台设备上任何 ssh 命令都会挂</strong></td>
+<td>能改就改掉那行；<strong>只读 rootfs 改不动</strong>就用 <code>ssh_config = &lt;你的配置&gt;</code> 绕开（<strong>§15</strong> 有完整步骤）</td>
+</tr>
+<tr>
 <td><code>TA rejected unlock: ...</code></td>
 <td>签名无效／狗不在白名单</td>
 <td>① 确认狗已登记（§17）② 确认狗是<strong>同一把</strong>③ 形态 B 看审计日志</td>
@@ -1431,49 +1644,70 @@ $CLI --so-lock
 <hr />
 <h2 id="a_1">附录 A：文件路径速查</h2>
 <p><strong>设备端</strong></p>
+<blockquote>
+<p>📁 <strong>本表统一用插件目录 <code>/oemdata/opt/optee/dongle/</code> 放配置</strong>——
+因为只读 rootfs 的机型 <code>/etc</code> 写不进去。<code>/etc</code> 可写且习惯放那儿的话，
+把下表的 <code>$DDIR</code> 换成 <code>/etc/tbox/dongle/</code>，并保证 <code>remote.conf</code> 里指对即可。
+（<code>$DDIR</code> = <code>/oemdata/opt/optee/dongle</code>）</p>
+</blockquote>
 <table>
 <thead>
 <tr>
 <th>路径</th>
 <th>内容</th>
+<th align="center">权限</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>/lib/optee_armtz/f8e9209a-….ta</code></td>
 <td>TA</td>
+<td align="center">644</td>
 </tr>
 <tr>
 <td><code>/usr/bin/keystore</code></td>
 <td>命令行工具（CA）</td>
+<td align="center">755</td>
 </tr>
 <tr>
 <td><code>/usr/bin/dummy_genkey</code></td>
 <td>密钥生成工具（无 openssl CLI 时用）</td>
+<td align="center">755</td>
 </tr>
 <tr>
-<td><code>/oemdata/opt/optee/dongle/dummy.so</code></td>
+<td><code>$DDIR/dummy.so</code></td>
 <td>插件：本地软狗（<code>--dongle dummy</code> 打开的就是它）</td>
+<td align="center">755</td>
 </tr>
 <tr>
-<td><code>/oemdata/opt/optee/dongle/remote.so</code></td>
+<td><code>$DDIR/remote.so</code></td>
 <td>插件：远程签名狗（<code>--dongle remote</code>）</td>
+<td align="center">755</td>
 </tr>
 <tr>
-<td><code>/oemdata/opt/optee/dongle/dummy.key</code></td>
+<td><code>$DDIR/dummy.key</code></td>
 <td>软狗私钥（<strong>形态 A</strong>）</td>
+<td align="center">600</td>
 </tr>
 <tr>
-<td><code>/etc/tbox/dongle/remote.conf</code></td>
-<td>远程狗配置（形态 B）</td>
+<td><code>$DDIR/remote.conf</code></td>
+<td>远程狗配置（<strong>形态 B</strong>，§15）</td>
+<td align="center">644</td>
 </tr>
 <tr>
-<td><code>/etc/tbox/dongle/id_ed25519</code></td>
-<td>设备 SSH 身份（形态 B）</td>
+<td><code>$DDIR/id_ed25519</code></td>
+<td>设备 SSH 身份私钥（形态 B，§13）</td>
+<td align="center"><strong>600</strong></td>
 </tr>
 <tr>
-<td><code>/etc/tbox/dongle/known_hosts</code></td>
-<td>服务器主机密钥（形态 B）</td>
+<td><code>$DDIR/known_hosts</code></td>
+<td>服务器主机密钥（形态 B，§14）</td>
+<td align="center"><strong>600</strong></td>
+</tr>
+<tr>
+<td><code>$DDIR/ssh_config</code></td>
+<td>可选：绕开系统 ssh 配置（形态 B，§15）</td>
+<td align="center">644</td>
 </tr>
 </tbody>
 </table>

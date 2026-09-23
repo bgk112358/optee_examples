@@ -30,6 +30,26 @@ known_hosts = /etc/tbox/dongle/known_hosts
 # SSH 客户端。嵌入式上常是 dropbear 的 dbclient，不是 openssh 的 ssh。
 ssh_bin = ssh
 
+# ---- ssh_config：客户端配置（可选，一般不用设）----
+# 设了就变成 `ssh -F <该文件>`，**完全绕开 /etc/ssh/ssh_config**。
+#
+# 什么时候需要：
+#   只读 rootfs 上改不了系统的 /etc/ssh/ssh_config，而里面混了一个**服务端**
+#   选项（最常见是 PermitRootLogin），ssh 客户端会直接终止并报：
+#       /etc/ssh/ssh_config: line N: Bad configuration option: permitrootlogin
+#       terminating, 1 bad configuration options
+#   现象是 `getpub failed (rc=255)`。这时指向一份自己可控的干净配置即可。
+#
+# 注意：填的文件会**取代**系统配置，所以别只写一行了事——
+# 客户端该有的东西（Host *、Ciphers 等加固项）要一并写进去。
+# 不想丢系统加固的话，可以做一个"包含 + 覆盖"的文件：
+#     # /oemdata/opt/optee/dongle/ssh_config
+#     Host *
+#         IdentitiesOnly yes
+#         ServerAliveInterval 5
+# （或者手工把系统配置里合法的部分抄过来，去掉那行脏的）
+ssh_config =
+
 # 单次调用总超时（毫秒）。probe() 也用它，太大会拖慢每次启动。
 timeout_ms = 2000
 

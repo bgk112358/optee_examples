@@ -81,6 +81,11 @@
 | TEE | OP-TEE 3.2（产品版本） |
 | 目录 | `/lib/optee_armtz/`（放 TA）、`/usr/bin/`、`/usr/lib/` |
 | 已装库 | `libssl.so.1.1` / `libcrypto.so.1.1`（CA 和插件要用；**一般镜像里已有**） |
+| **SSH 客户端**（仅形态 B） | 设备要能主动 SSH 到上位机。**精简 rootfs 往往没有**——先 `which ssh dbclient` 确认；没有就装 dropbear（`dbclient` 很小） |
+
+> ⚠️ **形态 B 的隐性前提**：`remote.so` 会去 **exec 一个 SSH 客户端**。
+> 没有的话报 `getpub failed (rc=127)`——127 就是"命令不存在"。
+> 装了 dropbear 的话，记得把 `ssh_bin` 改成 `dbclient`（见 §15）。
 
 > ⚠️ 设备上**通常没有 `openssl` 命令行**——本文所有需要生成密钥的地方，
 > 都已改用随本方案提供的 `dummy_genkey` 工具，不依赖 `openssl` CLI。
@@ -162,6 +167,22 @@ ls -l /usr/bin/keystore /usr/bin/dummy_genkey
 ls -l /oemdata/opt/optee/dongle/
 keystore --help | head -3        # 能打印用法即部署成功
 ```
+
+**再确认拷的是新版**（旧版本有几个已修的 bug，见 §24）：
+
+```bash
+# 新版 remote.so 才有的特征
+grep -ac "退出码 127" /oemdata/opt/optee/dongle/remote.so     # ≥1 = 新版
+grep -ac "ssh_config"  /oemdata/opt/optee/dongle/remote.so    # ≥1 = 新版
+
+# 新版 dummy.so 才有的特征（旧的仍在找 EC 密钥）
+strings /oemdata/opt/optee/dongle/dummy.so | grep -c "not an RSA key"   # ≥1 = 新版
+```
+
+> ⚠️ **设备上残留的旧插件要清掉**。本文把默认插件目录改成了
+> `/oemdata/opt/optee/dongle`，但 `/usr/lib/tbox/dongle` 下的旧文件**不会自动失效**——
+> 如果你设了 `TBOX_DONGLE_DIR` 或改了回去，旧插件又会被加载。
+> 建议删掉或改名，避免"以为在跑新版、其实在跑旧的"。
 
 ### 3.1 插件目录与 `--dongle` 的解析规则
 
@@ -268,6 +289,21 @@ sudo mkdir -p /opt/tbox-dongle-sign
 sudo cp tbox-dongle-sign /opt/tbox-dongle-sign/
 sudo chmod 755 /opt/tbox-dongle-sign/tbox-dongle-sign
 ```
+
+**验证（顺便确认拷的是新版）**：
+
+```bash
+/opt/tbox-dongle-sign/tbox-dongle-sign info | head -2
+```
+
+```
+service=tbox-dongle-sign
+version=1.1.1          ← 版本号随功能更新；比本文旧的话建议换新
+```
+
+> 💡 **为什么要看版本号**：这个脚本改过几轮（错误提示、`ssh_config` 支持等）。
+> 老版本报的错常常**指向错误的方向**（例如把"权限问题"报成"文件不存在"）。
+> 排障前先确认版本，能省很多来回。
 
 ### 8. 生成签名私钥（**这是整套系统的信任根**）
 
@@ -533,14 +569,44 @@ sudo -u tbox-signer ssh -i <某台设备的私钥> localhost \
 
 ### 13. 生成设备专属 SSH 身份（**每台设备一把，不要共用**）
 
+> 📁 **文件放哪**：下面统一用 `/oemdata/opt/optee/dongle/`（**插件目录**）。
+> 因为**只读 rootfs 的机型很常见**，`/etc` 往往写不进去。只要 `remote.conf` 里的
+> `key` 指对，放哪都行；`/etc` 可写且习惯放那儿的话，换成 `/etc/tbox/dongle/` 即可。
+
 ```bash
-mkdir -p -m 700 /etc/tbox/dongle
-ssh-keygen -t ed25519 -N "" -f /etc/tbox/dongle/id_ed25519
-cat /etc/tbox/dongle/id_ed25519.pub
+DDIR=/oemdata/opt/optee/dongle
+mkdir -p -m 700 "$DDIR"
+ssh-keygen -t ed25519 -N "" -f "$DDIR/id_ed25519"
+chmod 600 "$DDIR/id_ed25519"
+cat "$DDIR/id_ed25519.pub"        # ← 这一整行要交给上位机管理员
 ```
 
-- 把 **`.pub` 的内容**交给上位机管理员，写进 §9 的 `authorized_keys`
-- **`.pub` 的指纹**（`ssh-keygen -lf /etc/tbox/dongle/id_ed25519.pub`）填进 §10 的 `fingerprint`
+- 把 **`.pub` 的内容**交给上位机管理员，写进 §9.2 的 `authorized_keys`
+- **`.pub` 的指纹**（`ssh-keygen -lf "$DDIR/id_ed25519.pub"`）填进 §10 的 `fingerprint`
+
+> ### 🔧 设备上没有 `ssh-keygen` 怎么办
+>
+> 精简 rootfs 常常没有 openssh 的这套工具（`ssh-keygen` / `ssh-keyscan` 都没有）。
+> **在别处生成，只把私钥拷进设备**：
+>
+> ```bash
+> # ① 在上位机（或任何有 ssh-keygen 的机器）上生成
+> ssh-keygen -t ed25519 -N "" -f ./id_ed25519 -C "device-001"
+> ssh-keygen -lf ./id_ed25519.pub          # 记下这个指纹 → 填 §10
+> cat ./id_ed25519.pub                     # 这一行 → 上位机 authorized_keys（§9.2）
+>
+> # ② 只把【私钥】拷到设备（公钥留在上位机）
+> scp ./id_ed25519 root@<设备IP>:/oemdata/opt/optee/dongle/
+>
+> # ③ 设备上收紧权限
+> chmod 600 /oemdata/opt/optee/dongle/id_ed25519
+> ```
+>
+> ⚠️ **安全代价要意识到**：私钥在设备外产生过，**灌装的人因此可以冒充这台设备**。
+> 威胁模型不能接受的话，就得给设备刷一个带 `ssh-keygen` 的 rootfs。
+>
+> 好消息是这不是致命弱点——真正的安全边界是 **TA 内的验签 + 白名单**（§17），
+> SSH 身份只负责"是哪台设备在请求"。但**每台设备仍要各生成一把，不能共用**。
 
 > **为什么每台设备要独立**：服务端靠这个身份区分"是哪台设备在请求"。
 > 如果所有设备共用一个身份，**一台设备被攻陷就等于所有设备可被签名**。
@@ -549,34 +615,124 @@ cat /etc/tbox/dongle/id_ed25519.pub
 
 插件**强制校验服务器主机密钥**（`StrictHostKeyChecking=yes`），没有它连不上：
 
-```bash
-ssh-keyscan -p 22 <上位机地址> > /etc/tbox/dongle/known_hosts
-chmod 600 /etc/tbox/dongle/known_hosts
+```
+No ECDSA host key is known for <上位机地址> and you have requested strict checking.
+Host key verification failed.
+[remote] getpub failed (rc=255)
 ```
 
 > **为什么强制**：不校验主机密钥，攻击者就能冒充签名服务器骗设备把 challenge 发过去。
->
-> ⚠️ **上线前请与上位机管理员核对这个文件的指纹**，确保拿到的是真服务器的密钥。
+
+#### 14.1 生成（**推荐在上位机上生成，再拷到设备**）
+
+**设备上通常没有 `ssh-keyscan`**（跟 `ssh-keygen` 一样，精简 rootfs 都没有）。
+最可靠的做法：**在上位机上直接读它自己的主机密钥文件**——不经网络，没有中间人空间。
+
+```bash
+# 【在上位机上执行】把 <上位机地址> 换成设备访问它时用的那个地址
+cd /tmp
+> known_hosts
+for t in ed25519 ecdsa rsa; do
+  f=/etc/ssh/ssh_host_${t}_key.pub
+  [ -f "$f" ] && echo "<上位机地址> $(cat $f)" >> known_hosts
+done
+cat known_hosts
+```
+
+输出形如：
+
+```
+192.168.0.107 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... root@ubuntu-vm
+192.168.0.107 ecdsa-sha2-nistp256 AAAAE2VjZHNh... root@ubuntu-vm
+192.168.0.107 ssh-rsa AAAAB3NzaC1yc2E... root@ubuntu-vm
+```
+
+> `known_hosts` 的格式是 `<主机> <类型> <base64> [注释]`——
+> **行尾那个 `root@ubuntu-vm` 是注释，写什么都行**，不影响匹配。
+
+**备选**：上位机有 `ssh-keyscan` 的话也能用（相当于自己连自己，多走一遍网络）：
+
+```bash
+ssh-keyscan -p 22 <上位机地址> > ./known_hosts
+```
+
+> ⚠️ **端口不是 22 时，known_hosts 里必须写方括号形式**，否则匹配不上：
+> ```
+> [192.168.0.107]:2222 ssh-ed25519 AAAA...
+> ```
+> `ssh-keyscan -p 2222` 会自动输出这种格式；手工拼的话要自己加方括号。
+
+#### 14.2 ⚠️ 核对指纹（**不能跳过**）
+
+`ssh-keyscan`（甚至读文件的过程）都可能被中间人干扰，**上线前必须比对**：
+
+```bash
+# 在生成 known_hosts 的那台机器上
+ssh-keygen -lf known_hosts
+```
+
+```bash
+# 在上位机上，取它自己的真实指纹
+ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+**两边 SHA256 必须逐字一致。不一致 = 有人在冒充，绝不能往下走。**
+
+#### 14.3 拷到设备
+
+```bash
+scp known_hosts root@<设备IP>:/oemdata/opt/optee/dongle/known_hosts
+```
+
+```bash
+# 设备上确认
+chmod 600 /oemdata/opt/optee/dongle/known_hosts
+cat /oemdata/opt/optee/dongle/known_hosts      # 有内容，且行首是上位机地址
+```
+
+对应 `remote.conf` 的 `known_hosts = /oemdata/opt/optee/dongle/known_hosts`（见 §15）。
 
 ### 15. 写设备端配置 `remote.conf`
 
-```bash
-cp /path/to/remote.conf.example /etc/tbox/dongle/remote.conf
-vi /etc/tbox/dongle/remote.conf
+文件放哪由**查找顺序**决定（从上往下，第一个可读的生效）：
+
+```
+① $TBOX_REMOTE_DONGLE_CONF              ← 环境变量显式指定
+② <插件目录>/remote.conf                 ← /oemdata/opt/optee/dongle/remote.conf
+③ /etc/tbox/dongle/remote.conf           ← 默认；/etc 只读就写不了
 ```
 
-最小配置（其余保持默认）：
+> 📁 **只读 rootfs 的机型请一律用 ②**——`/etc` 写不进去。
+> （`key` / `known_hosts` / `ssh_config` 这些配套文件同理，放插件目录最省事。）
+
+```bash
+cp /path/to/remote.conf.example /oemdata/opt/optee/dongle/remote.conf
+vi /oemdata/opt/optee/dongle/remote.conf
+```
+
+**最小配置**（其余保持默认）：
 
 ```ini
-transport = ssh
-host      = <上位机地址>
-user      = tbox-signer
-port      = 22
-key         = /etc/tbox/dongle/id_ed25519
-known_hosts = /etc/tbox/dongle/known_hosts
+transport   = ssh
+host        = <上位机地址>
+user        = tbox-signer
+port        = 22
+key         = /oemdata/opt/optee/dongle/id_ed25519        # §13 生成的设备身份私钥
+known_hosts = /oemdata/opt/optee/dongle/known_hosts       # §14 预置的主机密钥
+ssh_config  =                                              # 可选，一般留空；见下方
 timeout_ms  = 2000
-remote_cmd  =                    # ← 留空！见下方说明
+remote_cmd  =                                              # ← 留空！见下方说明
 ```
+
+> ### ⚠️ `key` 和 `known_hosts` **没有默认值，两个都必须写**
+>
+> 插件里这两个字段默认是**空字符串**：
+>
+> - `key` 空 → **不加 `-i`** → ssh 去找它自己的默认身份（`~/.ssh/id_rsa` 之类），设备上通常没有
+> - `known_hosts` 空 → 用 ssh 默认的 `~/.ssh/known_hosts` → 同样不存在
+>
+> `remote.conf.example` 里写的 `/etc/tbox/dongle/...` **只是示例路径，不是默认值**。
 
 | 键 | 说明 |
 |---|---|
@@ -585,7 +741,44 @@ remote_cmd  =                    # ← 留空！见下方说明
 | `known_hosts` | §14 预置的文件 |
 | `remote_cmd` | **留空**（推荐部署下）。理由见下 |
 | `ssh_bin` | SSH 客户端程序。**嵌入式上常是 dropbear 的 `dbclient` 而不是 `ssh`**，按实际改 |
+| `ssh_config` | **可选**。指定 ssh 客户端配置文件（`ssh -F <该文件>`），绕开系统的 `/etc/ssh/ssh_config`。见下方 |
 | `timeout_ms` | 单次调用总超时；`probe`（探测）也用它，别设太大 |
+
+> ### 🔧 `/etc/ssh/ssh_config` 有问题、又改不动？用 `ssh_config` 绕开
+>
+> **症状**：设备上 `which ssh` 明明有，却报
+> ```
+> /etc/ssh/ssh_config: line N: Bad configuration option: permitrootlogin
+> /etc/ssh/ssh_config: terminating, 1 bad configuration options
+> [remote] getpub failed (rc=255)
+> ```
+>
+> **原因**：系统 ssh **客户端**配置里混进了**服务端**选项（`PermitRootLogin` 属于
+> `sshd_config`，不是 `ssh_config`）。OpenSSH 客户端遇到不认识的选项会**直接终止**
+> （退出码 255）——而且这台设备上**任何 ssh 命令都会挂**。
+>
+> **改不动系统文件时**（只读 rootfs 常见），指向一份自己可控的配置即可：
+>
+> ```bash
+> # ① 写一份干净配置（放你可写的地方，比如插件目录）
+> cat > /oemdata/opt/optee/dongle/ssh_config <<'EOF'
+> Host *
+>     IdentitiesOnly yes
+>     ServerAliveInterval 5
+> EOF
+>
+> # ② 在 remote.conf 里指过去
+> echo 'ssh_config = /oemdata/opt/optee/dongle/ssh_config' >> /oemdata/opt/optee/dongle/remote.conf
+> ```
+>
+> ⚠️ **这个文件会「取代」系统配置**，不是在它基础上追加。所以别只写一行了事——
+> 如果你们的系统配置里有安全加固项（`Ciphers` / `KexAlgorithms` / `MACs`），
+> 要一并抄进来，否则等于把它们关掉了。
+>
+> 也可以临时用环境变量验证，不必改配置：
+> ```bash
+> TBOX_REMOTE_DONGLE_SSH_CONFIG=/path/to/clean_config keystore --provision-dongle --dongle remote
+> ```
 
 > ### ⚠️ `remote_cmd` 为什么必须留空
 >
@@ -608,9 +801,27 @@ keystore --provision-dongle --dongle remote
 
 - **正常**：`[remote] connected: tbox-signer@<上位机> (294-byte pubkey)`
 - **`Cannot open known_hosts` / `Host key verification failed`** → 回到 §14
-- **`Permission denied`** → 设备公钥没加到上位机 authorized_keys（§9），或 `key` 路径不对
+- **`No ECDSA host key is known for <地址>`** → 同上，`known_hosts` 里没有这台上位机 → §14
+- **`getpub failed (rc=127)`** → **SSH 客户端**找不到或不可执行 → 查 `which ssh dbclient`，
+  按实际改 `ssh_bin`（§15）。新版插件会额外打印三条排查方向
+- **`Bad configuration option: xxx` + `rc=255`** → 系统 `/etc/ssh/ssh_config` 里有**服务端**选项。
+  改得动就改掉那行；**只读 rootfs 改不动就用 `ssh_config = <你的配置>` 绕开**（§15）
+- **`Permission denied`** → 设备公钥没加到上位机 authorized_keys（§9.2），或 `key` 路径不对
+- **`ssh: host not configured`** → `remote.conf` 没找到或 `host` 没填（§15 有查找顺序）
 - **`RESERVED, not implemented`** → 配置文件里 `transport` 写成了 `http_mtls`，改成 `ssh`
 - **卡住约 2 秒后失败** → 网络不通或上位机 sshd 没起（`timeout_ms` 生效，属正常保护）
+
+> 💡 **一条命令同时验三件事**：上面的报错**位置**就能区分层——
+>
+> | 报错里的前缀 | 说明卡在哪一层 |
+> |---|---|
+> | `[dongle]` | 插件加载（`.so` 路径 / ABI） |
+> | `[remote]` | SSH 传输（客户端、配置、网络、认证） |
+> | `[dummy]` | 本地软狗（`dummy.key` 读取） |
+> | `keystore:` / `keystore.new:` | CA 侧（没拿到 ops，或 TA 返回错误） |
+> | 无前缀、纯 hex | **TA 侧**（`0xffff0001` 之类）——最靠近业务 |
+>
+> 从 `[dongle]` 一路看到纯 hex，说明链路一层层都通了。
 
 ---
 
@@ -825,6 +1036,8 @@ $CLI --so-lock
 | `未知子命令: tbox-dongle-sign` (B) | `remote_cmd` 不该填却填了 | 强制命令模式下**必须留空**（§15） |
 | `Host key verification failed` (B) | `known_hosts` 缺失或不匹配 | 见 §14，并核对指纹 |
 | `getpub failed (rc=3)` (B) | 上位机没有签名私钥 | 在上位机执行 `genkey`（§8） |
+| `getpub failed (rc=127)` (B) —— **旧版插件会这么报**；新版会附上三条排查方向 | `rc=127` = "命令不存在"。① 设备上找不到 SSH 客户端 ② 路径对但不可执行 ③ 或**远端**没有该子命令 | `which ssh dbclient`；装了 dropbear 就把 `ssh_bin` 改成 `dbclient`（§15）。**旧版插件另有 bug：用 `execv` 而非 `execvp`，裸名不做 PATH 查找 → 即使 `/usr/bin/ssh` 存在也报 127**，须升级插件 |
+| **`/etc/ssh/ssh_config: line N: Bad configuration option: ...` + `getpub failed (rc=255)`** (B) | 系统 ssh **客户端**配置里混了**服务端**选项（如 `PermitRootLogin`）→ 客户端直接终止，退 255。**这台设备上任何 ssh 命令都会挂** | 能改就改掉那行；**只读 rootfs 改不动**就用 `ssh_config = <你的配置>` 绕开（**§15** 有完整步骤） |
 | `TA rejected unlock: ...` | 签名无效／狗不在白名单 | ① 确认狗已登记（§17）② 确认狗是**同一把**③ 形态 B 看审计日志 |
 | `SO-PIN not provisioned` | 没执行 `--init-so-pin` | 见 §18 第 ② 步 |
 | `PIN not yet provisioned` | 没执行 `--init-pin` | 见 §18 第 ① 步 |
@@ -887,17 +1100,23 @@ $CLI --so-lock
 
 **设备端**
 
-| 路径 | 内容 |
-|------|------|
-| `/lib/optee_armtz/f8e9209a-….ta` | TA |
-| `/usr/bin/keystore` | 命令行工具（CA） |
-| `/usr/bin/dummy_genkey` | 密钥生成工具（无 openssl CLI 时用） |
-| `/oemdata/opt/optee/dongle/dummy.so` | 插件：本地软狗（`--dongle dummy` 打开的就是它） |
-| `/oemdata/opt/optee/dongle/remote.so` | 插件：远程签名狗（`--dongle remote`） |
-| `/oemdata/opt/optee/dongle/dummy.key` | 软狗私钥（**形态 A**） |
-| `/etc/tbox/dongle/remote.conf` | 远程狗配置（形态 B） |
-| `/etc/tbox/dongle/id_ed25519` | 设备 SSH 身份（形态 B） |
-| `/etc/tbox/dongle/known_hosts` | 服务器主机密钥（形态 B） |
+> 📁 **本表统一用插件目录 `/oemdata/opt/optee/dongle/` 放配置**——
+> 因为只读 rootfs 的机型 `/etc` 写不进去。`/etc` 可写且习惯放那儿的话，
+> 把下表的 `$DDIR` 换成 `/etc/tbox/dongle/`，并保证 `remote.conf` 里指对即可。
+> （`$DDIR` = `/oemdata/opt/optee/dongle`）
+
+| 路径 | 内容 | 权限 |
+|------|------|:--:|
+| `/lib/optee_armtz/f8e9209a-….ta` | TA | 644 |
+| `/usr/bin/keystore` | 命令行工具（CA） | 755 |
+| `/usr/bin/dummy_genkey` | 密钥生成工具（无 openssl CLI 时用） | 755 |
+| `$DDIR/dummy.so` | 插件：本地软狗（`--dongle dummy` 打开的就是它） | 755 |
+| `$DDIR/remote.so` | 插件：远程签名狗（`--dongle remote`） | 755 |
+| `$DDIR/dummy.key` | 软狗私钥（**形态 A**） | 600 |
+| `$DDIR/remote.conf` | 远程狗配置（**形态 B**，§15） | 644 |
+| `$DDIR/id_ed25519` | 设备 SSH 身份私钥（形态 B，§13） | **600** |
+| `$DDIR/known_hosts` | 服务器主机密钥（形态 B，§14） | **600** |
+| `$DDIR/ssh_config` | 可选：绕开系统 ssh 配置（形态 B，§15） | 644 |
 
 **上位机（形态 B）**
 
