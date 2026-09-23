@@ -20,7 +20,7 @@ set(OPENSSL_DIR /home/test0923/workspace/OP-TEE/three_part/openssl/out
 
 # Install location on the target: "drop a .so in the directory" ==
 # "plug the dongle in" (docs/32 §6/§7).
-set(DONGLE_PLUGIN_DIR "/usr/lib/tbox/dongle"
+set(DONGLE_PLUGIN_DIR "/oemdata/opt/optee/dongle"
     CACHE PATH "where plugins are installed on the target")
 
 # ---- dummy.so — local soft dongle (dev / CI) ----

@@ -264,7 +264,7 @@ int (*sign)(struct dongle_ctx *ctx,
 ### 6.2 目录布局与插件解析规则
 
 ```
-/usr/lib/tbox/dongle/
+/oemdata/opt/optee/dongle/
 ├── dummy.so            # 软狗驱动
 ├── dummy.key           # 软狗"狗内私钥"（PEM，RSA-2048）
 └── remote.so           # 远程签名狗驱动（无 .key，见 §7）
@@ -290,7 +290,7 @@ int (*sign)(struct dongle_ctx *ctx,
 > 这既省掉了遍历开销，也意味着目录里放了一个无关的坏 `.so` 时，
 > 按名加载不会再受它干扰。
 
-**目录是可配的**：`/usr/lib/tbox/dongle` 只是编译期默认值，运行时用
+**目录是可配的**：`/oemdata/opt/optee/dongle` 只是编译期默认值，运行时用
 **`TBOX_DONGLE_DIR`** 覆盖（单个目录，不支持冒号分隔）。它同时决定 `.so`
 和配套 `.key`/`remote.conf` 的位置。
 
@@ -800,7 +800,7 @@ tbox_keystore/
 CLI=./keystore
 
 # ========== 0. "插入"本地软狗：驱动 + 密钥放入插件目录 ==========
-DGN=/usr/lib/tbox/dongle                  # 默认插件目录（可用 $TBOX_DONGLE_DIR 覆盖）
+DGN=/oemdata/opt/optee/dongle                  # 默认插件目录（可用 $TBOX_DONGLE_DIR 覆盖）
 mkdir -p "$DGN"
 cp dummy.so "$DGN/"                       # 驱动（CMake 目标 dummy_plugin 的产物）
 dummy_genkey "$DGN/dummy.key"             # "狗内私钥"（目标机无 openssl CLI，用本工具）
@@ -823,7 +823,7 @@ mv "$DGN/dummy.key" /tmp/            # 拿走密钥 → 下次启动探测不到
 
 # ========== 远程签名狗（生产）==========
 # Ubuntu 侧：tbox-dongle-sign serve（由 ssh command= 强制调用，见 §7.7）
-export TBOX_DONGLE_DIR=/usr/lib/tbox/dongle
+export TBOX_DONGLE_DIR=/oemdata/opt/optee/dongle
 ssh tbox-signer@<host> getpub | tr -d '\n' | xxd -r -p > dongle-pub.der
 ./optee_example_tbox_keystore --provision-dongle-from-file dongle-pub.der
 ./optee_example_tbox_keystore --so-unlock --so-pin <hex> --dongle remote
@@ -880,7 +880,7 @@ $CLI --so-lock                              # 收尾：锁回（见 §6.5 注意
 | # | 事项 | 说明 |
 |:--:|------|------|
 | 1 | **审计"界面"形态** | CLI 报表 / 简易 Web / 两者都要？（本期先做只读查询） |
-| 2 | **插件目录最终路径** | 暂定 `/usr/lib/tbox/dongle/`。**已定**：`--dongle <name>` 解析为 `<该目录>/<name>.so`，**不接受路径**（§6.2） |
+| 2 | **插件目录最终路径** | 暂定 `/oemdata/opt/optee/dongle/`。**已定**：`--dongle <name>` 解析为 `<该目录>/<name>.so`，**不接受路径**（§6.2） |
 | 3 | **本地软狗旧密钥路径是否保留兜底** | §6.3 第 3 条 |
 | 4 | **`CMD_PROVISION_DONGLE_MANIFEST`(19)** | doc 29 的批量白名单灌装，是否本期一并做？（当前用 `CMD_PROVISION_DONGLE`(13) 逐个登记已够） |
 | 5 | **yubikey 是否以插件形式回归** | `dongle_yubikey.c` 源码保留，将来可做成 `yubikey.so`（框架天然支持） |

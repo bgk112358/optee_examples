@@ -4,7 +4,7 @@
  * Dummy dongle backend — local RSA-2048 key file, loaded as a PLUGIN.
  *
  * Built as `dummy.so` and dropped into the dongle plugin directory
- * (default /usr/lib/tbox/dongle/, override $TBOX_DONGLE_DIR).  Together
+ * (default /oemdata/opt/optee/dongle/, override $TBOX_DONGLE_DIR).  Together
  * with a companion key file that is what "plugging in a dongle" means:
  *
  *     <plugin dir>/dummy.so     ← the driver

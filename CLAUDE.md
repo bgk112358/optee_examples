@@ -181,4 +181,5 @@ optee_examples_AG519M/tbox_keystore/
 | docs/30-ecc-p256-ta-unsupported-debug-log.md | ECDSA P-256 验签不支持调试记录（3.2 ECDSA transient panic → RSA） |
 | docs/31-key-management-and-secure-services.md | 口语化说明：密钥管理（含 dongle）+ HTTPS/MQTTS 安全能力来源 |
 | docs/33-deployment-guide.md | **部署手册（交付部署工程师）** |
+| docs/34-cloud-device-provisioning-lifecycle.md | **云端 ↔ 车端逻辑关系**（灌装 / 售后两条线的时序与状态机） |
 | docs/32-dongle-plugin-architecture.md | **Dongle 可插拔设计（本地软狗 + 远程 SSH 签名狗，RSA-2048，TA 内验签）— 未实施** |

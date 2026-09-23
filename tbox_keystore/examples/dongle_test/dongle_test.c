@@ -391,7 +391,7 @@ TEST(detect)
 
 /* ---- Main ---- */
 /*
- * The loader reads plugins from $TBOX_DONGLE_DIR (default /usr/lib/tbox/dongle).
+ * The loader reads plugins from $TBOX_DONGLE_DIR (default /oemdata/opt/optee/dongle).
  * Point it at the directory holding our freshly built dummy.so, which CMake
  * places next to this test binary.  Fail loudly if it is not there — a
  * silent fallback would make every test fail with a confusing message.

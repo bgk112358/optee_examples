@@ -9,7 +9,7 @@
  * <dir>/<name>.so -- or by auto-detection, which scans the directory.
  * See docs/32-dongle-plugin-architecture.md §6.
  *
- *   default dir : /usr/lib/tbox/dongle/
+ *   default dir : /oemdata/opt/optee/dongle/
  *   override    : $TBOX_DONGLE_DIR
  *
  * The CA (keystore_client.c) only depends on this header — it never

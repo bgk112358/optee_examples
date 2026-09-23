@@ -74,6 +74,15 @@ sudo /opt/tbox-dongle-sign/tbox-dongle-sign genkey
 
 ### 3. 配置 SSH 强制命令（每台设备一行）
 
+> **前置条件**：服务账号必须已存在，且**必须是真 shell**——不能用
+> `/usr/sbin/nologin` 或 `/bin/false`。sshd 是用**登录 shell** 执行 `command=` 的
+> （`$shell -c '那条命令'`），设成 nologin 的话 sshd 去跑 nologin 而不是本服务，
+> **强制命令永远不生效**。
+>
+> 建账号、交接文件属主（私钥 / `devices.json` / 运行期目录都必须是服务账号所有，
+> 否则服务读不到自己的私钥）、建运行期目录的完整步骤，见
+> [docs/33-deployment-guide.md §9](../docs/33-deployment-guide.md)。
+
 在签名服务账号（如 `tbox-signer`）的 `~/.ssh/authorized_keys` 中：
 
 ```
@@ -94,9 +103,26 @@ command="/opt/tbox-dongle-sign/tbox-dongle-sign serve --device device-001",no-po
 sudo cp devices.json.example /opt/tbox-dongle-sign/devices.json
 sudo chmod 600 /opt/tbox-dongle-sign/devices.json
 
+# ⚠️ 必须交给服务账号：服务以 tbox-signer 运行，root:600 它读不到
+sudo chown tbox-signer:tbox-signer /opt/tbox-dongle-sign/devices.json
+
 # 取设备真实指纹填入 fingerprint 字段
 ssh-keygen -lf device-001.pub        # → SHA256:xxxx
 ```
+
+> ⚠️ 同理，`genkey` 用 `sudo` 生成的主私钥也是 **root:600**，服务读不到。
+> **注意目录也要改**：`genkey` 把 `keys/` 建成 **0700 root**，服务账号进不去，
+> 会误报 `私钥不存在`（`os.path.exists()` 在父目录不可进入时返回 False）：
+>
+> ```bash
+> sudo chown -R tbox-signer:tbox-signer /opt/tbox-dongle-sign/keys
+> sudo chmod 700 /opt/tbox-dongle-sign/keys
+> sudo chmod 600 /opt/tbox-dongle-sign/keys/dongle.pem
+> ```
+>
+> 运行期目录 `/var/lib/tbox-dongle`（限流状态）与 `/var/log/tbox-dongle`（审计）
+> 也要归服务账号所有。完整清单见
+> [docs/33-deployment-guide.md §9.3](../docs/33-deployment-guide.md)。
 
 | 能力 | 说明 |
 |------|------|

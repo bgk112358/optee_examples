@@ -43,7 +43,7 @@ AUDIT_PATH = os.environ.get("TBOX_DONGLE_SIGN_AUDIT", "/var/log/tbox-dongle/audi
 STATE_PATH = os.environ.get("TBOX_DONGLE_SIGN_STATE", "/var/lib/tbox-dongle/state.json")
 
 SERVICE_NAME = "tbox-dongle-sign"
-SERVICE_VERSION = "1.1.0"
+SERVICE_VERSION = "1.1.1"
 KEY_BITS = 2048
 DIGEST_LEN = 32  # SHA-256
 
@@ -75,14 +75,32 @@ except ImportError:
 def load_private_key():
     """读取 RSA 私钥；校验类型与位数。"""
     if not os.path.exists(KEY_PATH):
+        # ⚠️ os.path.exists() 在「父目录不可进入」时也返回 False（它吞掉 EACCES）。
+        # 不区分的话，权限问题会被误报成「文件不存在」，
+        # 把人引向 genkey 重生成——而重生成只会盖不掉、问题照旧。
+        d = os.path.dirname(KEY_PATH)
+        if d and os.path.isdir(d) and not os.access(d, os.X_OK):
+            die(EXIT_KEY,
+                "私钥读不到（**不是**不存在）: %s\n"
+                "  真因: 父目录不可进入 —— %s (权限 %04o)\n"
+                "  说明: genkey 以 root 运行时会把该目录建成 0700 root，\n"
+                "        服务账号无法进入。\n"
+                "  修复: sudo chown -R <服务账号> %s && sudo chmod 700 %s"
+                % (KEY_PATH, d, os.stat(d).st_mode & 0o777, d, d))
         die(EXIT_KEY, "私钥不存在: %s\n  先执行: %s genkey" % (KEY_PATH, sys.argv[0]))
 
     mode = os.stat(KEY_PATH).st_mode & 0o777
     if mode & 0o077:
         warn("私钥权限过宽 (%04o)，建议 chmod 600 %s" % (mode, KEY_PATH))
 
-    with open(KEY_PATH, "rb") as f:
-        key = serialization.load_pem_private_key(f.read(), password=None)
+    try:
+        with open(KEY_PATH, "rb") as f:
+            raw = f.read()
+    except OSError as exc:
+        # 文件存在、可 stat，但读不了（权限位或 SELinux/AppArmor 之类）
+        die(EXIT_KEY, "私钥无法读取: %s\n  %s" % (KEY_PATH, exc))
+
+    key = serialization.load_pem_private_key(raw, password=None)
 
     if not isinstance(key, rsa.RSAPrivateKey):
         die(EXIT_KEY, "私钥不是 RSA 类型")
@@ -196,8 +214,25 @@ def _state_lock():
     """对状态文件加排他锁（服务每次调用都是新进程，状态必须落盘）。"""
     d = os.path.dirname(STATE_PATH)
     if d:
-        os.makedirs(d, exist_ok=True)
-    fd = os.open(STATE_PATH, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError as exc:
+            # 裸抛出去会变成 "internal error: [Errno 13] ..."，完全不可操作。
+            # 限流状态必须能落盘（落不了盘=限流失效），所以这里失败关闭。
+            die(EXIT_INTERNAL,
+                "状态目录不可用: %s\n"
+                "  %s\n"
+                "  限流状态必须能落盘。把该目录交给服务账号：\n"
+                "    sudo install -d -o <服务账号> -g <服务账号> -m 700 %s"
+                % (d, exc, d))
+    try:
+        fd = os.open(STATE_PATH, os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as exc:
+        die(EXIT_INTERNAL,
+            "状态文件不可写: %s\n"
+            "  %s\n"
+            "  修复: sudo chown -R <服务账号> %s"
+            % (STATE_PATH, exc, d or os.path.dirname(STATE_PATH) or "/"))
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         raw = os.read(fd, 1 << 20)
@@ -407,11 +442,25 @@ def cmd_audit(args):
             die(EXIT_USAGE, "未知参数: %s（可用 --tail/--device/--result/--since/--json）" % a)
 
     if not os.path.exists(AUDIT_PATH):
+        # 同 load_private_key()：父目录不可进入时 exists() 也返回 False，
+        # 不区分就会把「读不到」误报成「没有日志」——排查方向完全错。
+        d = os.path.dirname(AUDIT_PATH)
+        if d and os.path.isdir(d) and not os.access(d, os.X_OK):
+            die(EXIT_INTERNAL,
+                "审计目录不可进入: %s (权限 %04o)\n"
+                "  注意：不是「没有日志」，是读不到。\n"
+                "  修复: sudo install -d -o <服务账号> -g <服务账号> -m 700 %s"
+                % (d, os.stat(d).st_mode & 0o777, d))
         print("（无审计日志: %s）" % AUDIT_PATH, file=sys.stderr)
         return EXIT_OK
 
+    try:
+        f = open(AUDIT_PATH)
+    except OSError as exc:
+        die(EXIT_INTERNAL, "审计日志无法读取: %s\n  %s" % (AUDIT_PATH, exc))
+
     rows = []
-    with open(AUDIT_PATH) as f:
+    with f:
         for line in f:
             line = line.strip()
             if not line:

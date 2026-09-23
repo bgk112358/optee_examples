@@ -15,7 +15,7 @@
  * Either way the .so must report a matching ABI version, so dropping one
  * into the directory is still equivalent to "installing a dongle driver".
  *
- *   default dir : /usr/lib/tbox/dongle/
+ *   default dir : /oemdata/opt/optee/dongle/
  *   override    : $TBOX_DONGLE_DIR
  *
  * The public API (dongle_detect / dongle_get) is unchanged, so callers
@@ -32,7 +32,7 @@
 
 #include "dongle_ops.h"
 
-#define DONGLE_DIR_DEFAULT	"/usr/lib/tbox/dongle"
+#define DONGLE_DIR_DEFAULT	"/oemdata/opt/optee/dongle"
 #define PLUGIN_MAX		8
 #define PATH_MAX_LEN		512
 #define BACKEND_NAME_MAX	64
