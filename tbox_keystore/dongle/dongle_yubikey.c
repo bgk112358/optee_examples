@@ -3,14 +3,29 @@
  *
  * YubiKey dongle backend — PIV (FIPS 201) via libykpiv.
  *
- * Two build modes:
+ * ########################################################################
+ * # NOT BUILT.  Kept as reference — see docs/32 §10 and §13.             #
+ * #                                                                      #
+ * # Reasons it is out of the build:                                      #
+ * #   1. It signs with ECDSA P-256, but the TA now verifies RSA-2048     #
+ * #      (PKCS#1 v1.5 / SHA-256) inside the secure world.  OP-TEE 3.2    #
+ * #      cannot verify ECDSA there (docs/30), so an ECDSA dongle is      #
+ * #      rejected outright.                                              #
+ * #   2. Backends are now PLUGINS loaded at run time, not compiled in.   #
+ * #                                                                      #
+ * # To bring YubiKey back: port this to the plugin ABI in dongle_ops.h   #
+ * # (export dongle_plugin_get_ops / dongle_plugin_abi_version, set       #
+ * # .key_type/.priority) and make it sign with an RSA-2048 key in PIV    #
+ * # slot 9a — docs/29 has the full plan.                                 #
+ * ########################################################################
+ *
+ * Two build modes (when it was compiled in):
  *   WITH_LIBYKPIV=1   → Link against libykpiv for direct USB access.
  *   WITH_LIBYKPIV=0   → Use ykman CLI subprocess as fallback.
  *
- * Default: fallback mode (ykman CLI).  Requires ykman >= 4.0 in PATH.
- *
  * YubiKey PIV slot usage:
- *   Slot 9a  → Authentication (ECDSA P-256, factory-provisioned)
+ *   Slot 9a  → Authentication (factory-provisioned; must be switched to
+ *              RSA-2048 for the TA to accept it)
  *   Slot 9c  → Digital Signature (optional)
  */
 

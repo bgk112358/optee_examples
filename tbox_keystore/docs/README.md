@@ -34,3 +34,7 @@
 | [28-yubikey-full-lifecycle.md](28-yubikey-full-lifecycle.md) | SO 解锁完整闭环 + 安全缺口分析 |
 | [29-rsa-yubikey-provisioning.md](29-rsa-yubikey-provisioning.md) | **最终方案**：RSA-2048 产线灌装与 SO 解锁完整设计 |
 | [30-ecc-p256-ta-unsupported-debug-log.md](30-ecc-p256-ta-unsupported-debug-log.md) | TA 不支持 ECC P-256 验签的调试记录（ECDSA transient panic → RSA） |
+| [31-key-management-and-secure-services.md](31-key-management-and-secure-services.md) | 口语化总述：密钥管理（PIN/锁定/SO-PIN+dongle）+ HTTPS/MQTTS 安全能力来源 |
+| [32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md) | **Dongle 可插拔设计**：本地软狗 + 远程签名狗（SSH/RSA-2048/TA 内验签/审计日志） |
+| [33-deployment-guide.md](33-deployment-guide.md) | **部署手册**：两种 dongle 形态的完整部署/灌装/售后解锁/验收/排查 |
+| [34-cloud-device-provisioning-lifecycle.md](34-cloud-device-provisioning-lifecycle.md) | **云端 ↔ 车端逻辑关系**：角色与信任边界、灌装与售后两条线的时序与状态机 |

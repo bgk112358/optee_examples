@@ -1,0 +1,607 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+tbox-dongle-sign — TBox 远端签名服务（远程签名狗）
+
+运行在上位机（Ubuntu）或云端。TBox 设备通过 SSH 调用本服务，由本服务持有的
+RSA-2048 私钥对 challenge 摘要签名。**私钥永不出本机。**
+
+对应设计文档：docs/32-dongle-plugin-architecture.md §7
+
+协议（hex 文本，便于 SSH 传输与调试）：
+    ping                    → OK                       探测服务可用性
+    getpub                  → hex(DER 公钥)             供 TA 白名单登记
+    sign <hex 32B digest>   → hex(DER 签名 256B)       对 SHA-256 摘要签名
+    info                    → key=value 信息
+    genkey [--bits N]       → 生成密钥（管理员本地执行，不经 SSH）
+    serve [--device ID]     → SSH 强制命令模式
+    audit [...]             → 审计日志查看（只读）
+
+策略与审计（P7）：
+    devices.json  设备白名单（id / enabled / fingerprint / rate_limit）
+    audit.jsonl   审计日志（JSON Lines，每次调用都记）
+
+退出码：
+    0 成功   1 用法错误   2 参数错误   3 密钥/配置缺失   4 策略拒绝   5 内部错误
+"""
+
+import base64
+import fcntl
+import hashlib
+import json
+import os
+import sys
+import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
+
+# ---- 路径配置（可用环境变量覆盖，便于开发/测试）----
+HOME_DIR = os.environ.get("TBOX_DONGLE_SIGN_HOME", "/opt/tbox-dongle-sign")
+KEY_PATH = os.environ.get("TBOX_DONGLE_SIGN_KEY", os.path.join(HOME_DIR, "keys", "dongle.pem"))
+DEVICES_PATH = os.environ.get("TBOX_DONGLE_SIGN_DEVICES", os.path.join(HOME_DIR, "devices.json"))
+AUDIT_PATH = os.environ.get("TBOX_DONGLE_SIGN_AUDIT", "/var/log/tbox-dongle/audit.jsonl")
+STATE_PATH = os.environ.get("TBOX_DONGLE_SIGN_STATE", "/var/lib/tbox-dongle/state.json")
+
+SERVICE_NAME = "tbox-dongle-sign"
+SERVICE_VERSION = "1.1.1"
+KEY_BITS = 2048
+DIGEST_LEN = 32  # SHA-256
+
+EXIT_OK, EXIT_USAGE, EXIT_ARG, EXIT_KEY, EXIT_POLICY, EXIT_INTERNAL = 0, 1, 2, 3, 4, 5
+
+
+def die(code, msg):
+    """把错误打到 stderr 并退出。stdout 只用于协议数据。"""
+    print("%s: error: %s" % (SERVICE_NAME, msg), file=sys.stderr)
+    sys.exit(code)
+
+
+def warn(msg):
+    print("%s: warning: %s" % (SERVICE_NAME, msg), file=sys.stderr)
+
+
+# ---------------------------------------------------------------- 依赖
+
+try:
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa, utils
+except ImportError:
+    die(EXIT_INTERNAL, "需要 python3-cryptography（apt install python3-cryptography "
+                       "或 pip3 install cryptography）")
+
+
+# ---------------------------------------------------------------- 密钥
+
+def load_private_key():
+    """读取 RSA 私钥；校验类型与位数。"""
+    if not os.path.exists(KEY_PATH):
+        # ⚠️ os.path.exists() 在「父目录不可进入」时也返回 False（它吞掉 EACCES）。
+        # 不区分的话，权限问题会被误报成「文件不存在」，
+        # 把人引向 genkey 重生成——而重生成只会盖不掉、问题照旧。
+        d = os.path.dirname(KEY_PATH)
+        if d and os.path.isdir(d) and not os.access(d, os.X_OK):
+            die(EXIT_KEY,
+                "私钥读不到（**不是**不存在）: %s\n"
+                "  真因: 父目录不可进入 —— %s (权限 %04o)\n"
+                "  说明: genkey 以 root 运行时会把该目录建成 0700 root，\n"
+                "        服务账号无法进入。\n"
+                "  修复: sudo chown -R <服务账号> %s && sudo chmod 700 %s"
+                % (KEY_PATH, d, os.stat(d).st_mode & 0o777, d, d))
+        die(EXIT_KEY, "私钥不存在: %s\n  先执行: %s genkey" % (KEY_PATH, sys.argv[0]))
+
+    mode = os.stat(KEY_PATH).st_mode & 0o777
+    if mode & 0o077:
+        warn("私钥权限过宽 (%04o)，建议 chmod 600 %s" % (mode, KEY_PATH))
+
+    try:
+        with open(KEY_PATH, "rb") as f:
+            raw = f.read()
+    except OSError as exc:
+        # 文件存在、可 stat，但读不了（权限位或 SELinux/AppArmor 之类）
+        die(EXIT_KEY, "私钥无法读取: %s\n  %s" % (KEY_PATH, exc))
+
+    key = serialization.load_pem_private_key(raw, password=None)
+
+    if not isinstance(key, rsa.RSAPrivateKey):
+        die(EXIT_KEY, "私钥不是 RSA 类型")
+    if key.key_size != KEY_BITS:
+        die(EXIT_KEY, "私钥是 %d 位，本服务要求 %d 位" % (key.key_size, KEY_BITS))
+    return key
+
+
+def pubkey_der(key):
+    """导出公钥 DER（SubjectPublicKeyInfo）——与 TA 白名单登记用的格式一致。"""
+    return key.public_key().public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+
+
+def pubkey_sha256(key):
+    """公钥 DER 的 SHA-256 —— TA 白名单里存的就是这个哈希。"""
+    return hashlib.sha256(pubkey_der(key)).digest()
+
+
+# ---------------------------------------------------------------- 设备白名单
+
+def load_devices():
+    """
+    读取 devices.json。返回 (devices_dict, file_present)。
+
+    结构：
+      { "devices": [ {"id": "...", "enabled": true,
+                      "fingerprint": "SHA256:...",        # 可选，见 verify_caller_key()
+                      "rate_limit": {"max": 30, "window_sec": 60},
+                      "note": "..."} ],
+        "default_policy": "deny" }
+    """
+    if not os.path.exists(DEVICES_PATH):
+        return {}, False
+    try:
+        with open(DEVICES_PATH) as f:
+            doc = json.load(f)
+    except (OSError, ValueError) as exc:
+        die(EXIT_INTERNAL, "devices.json 无法解析: %s" % exc)
+
+    out = {}
+    for d in doc.get("devices", []):
+        if isinstance(d, dict) and d.get("id"):
+            out[str(d["id"])] = d
+    return out, True
+
+
+def caller_fingerprint():
+    """
+    当 sshd 配了 `ExposeAuthInfo yes` 时，$SSH_USER_AUTH 指向一个临时文件，
+    内含本次认证使用的公钥。据此算出指纹，用于与 devices.json 交叉校验。
+
+    未开启该项时返回 None —— 此时设备身份仅由强制命令里的 --device 提供。
+    """
+    path = os.environ.get("SSH_USER_AUTH", "")
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            for line in f:
+                parts = line.split()
+                # 形如：publickey ssh-ed25519 AAAAC3Nza...
+                if len(parts) >= 3 and parts[0] == "publickey":
+                    try:
+                        blob = base64.b64decode(parts[2])
+                    except Exception:      # noqa: BLE001 — 坏行直接跳过
+                        continue
+                    fp = base64.b64encode(
+                        hashlib.sha256(blob).digest()).decode().rstrip("=")
+                    return "SHA256:" + fp
+    except OSError:
+        return None
+    return None
+
+
+def check_device(device_id):
+    """
+    策略判定：设备必须存在、启用、（若配置了指纹则）指纹匹配。
+
+    返回 (ok, reason)。devices.json 缺失时**失败关闭**（deny）。
+    """
+    devices, present = load_devices()
+
+    if not present:
+        return False, "devices.json 不存在（%s）—— 未配置的调用一律拒绝" % DEVICES_PATH
+
+    dev = devices.get(device_id)
+    if dev is None:
+        return False, "设备未登记: %s" % device_id
+    if not dev.get("enabled", True):
+        return False, "设备已停用: %s" % device_id
+
+    want_fp = dev.get("fingerprint")
+    if want_fp:
+        got_fp = caller_fingerprint()
+        if got_fp is None:
+            return False, ("设备 %s 配置了指纹校验，但 sshd 未开启 ExposeAuthInfo "
+                           "（$SSH_USER_AUTH 缺失）" % device_id)
+        if got_fp != want_fp:
+            return False, "指纹不匹配: 期望 %s，实际 %s" % (want_fp, got_fp)
+
+    return True, "ok"
+
+
+# ---------------------------------------------------------------- 限频
+
+@contextmanager
+def _state_lock():
+    """对状态文件加排他锁（服务每次调用都是新进程，状态必须落盘）。"""
+    d = os.path.dirname(STATE_PATH)
+    if d:
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError as exc:
+            # 裸抛出去会变成 "internal error: [Errno 13] ..."，完全不可操作。
+            # 限流状态必须能落盘（落不了盘=限流失效），所以这里失败关闭。
+            die(EXIT_INTERNAL,
+                "状态目录不可用: %s\n"
+                "  %s\n"
+                "  限流状态必须能落盘。把该目录交给服务账号：\n"
+                "    sudo install -d -o <服务账号> -g <服务账号> -m 700 %s"
+                % (d, exc, d))
+    try:
+        fd = os.open(STATE_PATH, os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as exc:
+        die(EXIT_INTERNAL,
+            "状态文件不可写: %s\n"
+            "  %s\n"
+            "  修复: sudo chown -R <服务账号> %s"
+            % (STATE_PATH, exc, d or os.path.dirname(STATE_PATH) or "/"))
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        raw = os.read(fd, 1 << 20)
+        try:
+            st = json.loads(raw.decode() or "{}")
+        except ValueError:
+            st = {}
+        yield st
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.ftruncate(fd, 0)
+        os.write(fd, json.dumps(st).encode())
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def check_rate_limit(device_id, dev):
+    """按 devices.json 里该设备的 rate_limit 判定。返回 (ok, info)。"""
+    rl = dev.get("rate_limit") if dev else None
+    if not rl:
+        return True, ""
+
+    max_n = int(rl.get("max", 0) or 0)
+    window = int(rl.get("window_sec", 60) or 60)
+    if max_n <= 0:
+        return True, ""
+
+    now = time.time()
+    with _state_lock() as st:
+        ts = [t for t in st.get(device_id, []) if now - t < window]
+        if len(ts) >= max_n:
+            st[device_id] = ts
+            return False, "限频触发：%d 秒内已达 %d 次上限" % (window, max_n)
+        ts.append(now)
+        st[device_id] = ts
+    return True, ""
+
+
+# ---------------------------------------------------------------- 审计
+
+def audit(device, action, digest, result, ms, reason="", extra=None):
+    """
+    追加一条 JSON Lines 审计记录。**每次调用都记**，包括被拒绝的。
+
+    审计写入失败不中断服务（但会在 stderr 告警，经 SSH 回显给调用方）。
+    """
+    d = os.path.dirname(AUDIT_PATH)
+    if d:
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError as exc:
+            warn("无法创建审计目录 %s: %s" % (d, exc))
+
+    rec = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "device": device or "local",
+        "fp": caller_fingerprint() or "",
+        "action": action,
+        "digest": (digest or "")[:64],
+        "result": result,
+        "ms": ms,
+        "src": (os.environ.get("SSH_CONNECTION", "").split(" ")[0] or ""),
+    }
+    if reason:
+        rec["reason"] = reason
+    if extra:
+        rec.update(extra)
+
+    try:
+        with open(AUDIT_PATH, "a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        warn("审计写入失败 %s: %s" % (AUDIT_PATH, exc))
+
+
+# ---------------------------------------------------------------- 子命令
+
+def cmd_ping(_args):
+    """探测：只回 OK，不做任何密码学操作。"""
+    if not os.path.exists(KEY_PATH):
+        die(EXIT_KEY, "私钥不存在: %s" % KEY_PATH)
+    print("OK")
+    return EXIT_OK
+
+
+def cmd_getpub(_args):
+    """导出公钥 DER 的 hex。供 TBox 侧执行 --provision-dongle-from-file。"""
+    key = load_private_key()
+    print(pubkey_der(key).hex())
+    return EXIT_OK
+
+
+def cmd_sign(args):
+    """对 32 字节 SHA-256 摘要做 RSA-2048 PKCS#1 v1.5 签名。
+
+    与 TA 的 TEE_ALG_RSASSA_PKCS1_V1_5_SHA256 + TEE_AsymmetricVerifyDigest 一一对应：
+    输入是【摘要】而非原始报文，因此这里用 Prehashed(SHA256)。
+    """
+    if len(args) != 1:
+        die(EXIT_USAGE, "用法: sign <hex 32字节摘要>")
+
+    try:
+        digest = bytes.fromhex(args[0])
+    except ValueError:
+        die(EXIT_ARG, "摘要不是合法 hex")
+
+    if len(digest) != DIGEST_LEN:
+        die(EXIT_ARG, "摘要长度 %d 字节，应为 %d 字节（SHA-256）"
+            % (len(digest), DIGEST_LEN))
+
+    key = load_private_key()
+    sig = key.sign(digest, padding.PKCS1v15(), utils.Prehashed(hashes.SHA256()))
+
+    print(sig.hex())
+    return EXIT_OK
+
+
+def cmd_info(_args):
+    """返回服务与密钥信息（key=value，便于脚本解析）。"""
+    key = load_private_key()
+    der = pubkey_der(key)
+    print("service=%s" % SERVICE_NAME)
+    print("version=%s" % SERVICE_VERSION)
+    print("key_type=RSA-%d" % key.key_size)
+    print("pubkey_der_len=%d" % len(der))
+    print("pubkey_sha256=%s" % pubkey_sha256(key).hex())
+    print("key_path=%s" % KEY_PATH)
+    print("devices_path=%s" % DEVICES_PATH)
+    print("audit_path=%s" % AUDIT_PATH)
+    return EXIT_OK
+
+
+def cmd_genkey(args):
+    """生成 RSA-2048 私钥（管理员本地执行，不经 SSH）。"""
+    bits = KEY_BITS
+    if args:
+        if len(args) == 2 and args[0] == "--bits":
+            try:
+                bits = int(args[1])
+            except ValueError:
+                die(EXIT_USAGE, "--bits 需要整数")
+        else:
+            die(EXIT_USAGE, "用法: genkey [--bits 2048]")
+
+    if os.path.exists(KEY_PATH):
+        die(EXIT_KEY, "私钥已存在，拒绝覆盖: %s" % KEY_PATH)
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=bits)
+
+    key_dir = os.path.dirname(KEY_PATH)
+    if key_dir:
+        os.makedirs(key_dir, mode=0o700, exist_ok=True)
+
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    fd = os.open(KEY_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(pem)
+
+    print("私钥已生成: %s (%d 位, 权限 0600)" % (KEY_PATH, bits), file=sys.stderr)
+    print("公钥 SHA-256: %s" % pubkey_sha256(key).hex(), file=sys.stderr)
+    print("下一步：在 TBox 上用该公钥登记白名单（--provision-dongle-from-file）",
+          file=sys.stderr)
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------- 审计查看
+
+def _parse_since(s):
+    """'30m' / '2h' / '1d' / ISO8601 → epoch 秒。"""
+    if not s:
+        return 0.0
+    unit = s[-1]
+    if unit in "smhd" and s[:-1].isdigit():
+        mult = {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+        return time.time() - int(s[:-1]) * mult
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        die(EXIT_USAGE, "--since 需要 30m/2h/1d 或 ISO8601")
+
+
+def cmd_audit(args):
+    """审计日志查看（只读）。"""
+    tail_n = 20
+    f_device = f_result = None
+    since = 0.0
+    as_json = False
+
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--tail" and i + 1 < len(args):
+            tail_n = int(args[i + 1]); i += 2
+        elif a == "--device" and i + 1 < len(args):
+            f_device = args[i + 1]; i += 2
+        elif a == "--result" and i + 1 < len(args):
+            f_result = args[i + 1]; i += 2
+        elif a == "--since" and i + 1 < len(args):
+            since = _parse_since(args[i + 1]); i += 2
+        elif a == "--json":
+            as_json = True; i += 1
+        else:
+            die(EXIT_USAGE, "未知参数: %s（可用 --tail/--device/--result/--since/--json）" % a)
+
+    if not os.path.exists(AUDIT_PATH):
+        # 同 load_private_key()：父目录不可进入时 exists() 也返回 False，
+        # 不区分就会把「读不到」误报成「没有日志」——排查方向完全错。
+        d = os.path.dirname(AUDIT_PATH)
+        if d and os.path.isdir(d) and not os.access(d, os.X_OK):
+            die(EXIT_INTERNAL,
+                "审计目录不可进入: %s (权限 %04o)\n"
+                "  注意：不是「没有日志」，是读不到。\n"
+                "  修复: sudo install -d -o <服务账号> -g <服务账号> -m 700 %s"
+                % (d, os.stat(d).st_mode & 0o777, d))
+        print("（无审计日志: %s）" % AUDIT_PATH, file=sys.stderr)
+        return EXIT_OK
+
+    try:
+        f = open(AUDIT_PATH)
+    except OSError as exc:
+        die(EXIT_INTERNAL, "审计日志无法读取: %s\n  %s" % (AUDIT_PATH, exc))
+
+    rows = []
+    with f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if f_device and r.get("device") != f_device:
+                continue
+            if f_result and r.get("result") != f_result:
+                continue
+            if since and _iso_to_epoch(r.get("ts", "")) < since:
+                continue
+            rows.append(r)
+
+    rows = rows[-tail_n:]
+
+    if as_json:
+        for r in rows:
+            print(json.dumps(r, ensure_ascii=False))
+        return EXIT_OK
+
+    if not rows:
+        print("（无匹配记录）")
+        return EXIT_OK
+
+    print("%-24s %-14s %-8s %-9s %6s  %s" %
+          ("时间(UTC)", "设备", "动作", "结果", "耗时", "说明"))
+    print("-" * 88)
+    for r in rows:
+        print("%-24s %-14s %-8s %-9s %5sms  %s" % (
+            r.get("ts", "")[:23], r.get("device", "-"), r.get("action", "-"),
+            r.get("result", "-"), r.get("ms", "-"), r.get("reason", "")))
+    print("-" * 88)
+    print("共 %d 条" % len(rows))
+    return EXIT_OK
+
+
+def _iso_to_epoch(s):
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+# ---------------------------------------------------------------- SSH 强制命令
+
+def cmd_serve(args):
+    """
+    SSH 强制命令模式。
+
+    部署时在 authorized_keys 中写（**设备身份必须放进强制命令里**）：
+
+        command="/opt/tbox-dongle-sign/tbox-dongle-sign serve --device device-001",\
+    no-port-forwarding,no-pty,no-agent-forwarding,no-X11-forwarding \
+    ssh-ed25519 AAAA...设备公钥... device-001
+
+    注意末尾的 `device-001` 只是注释、不会传给程序；身份来自 `--device`。
+    真正的子命令由 SSH 通过 $SSH_ORIGINAL_COMMAND 传入。
+    """
+    device_id = None
+    i = 0
+    while i < len(args):
+        if args[i] == "--device" and i + 1 < len(args):
+            device_id = args[i + 1]; i += 2
+        else:
+            die(EXIT_USAGE, "serve 只接受 --device <id>，收到: %s" % args[i])
+
+    original = os.environ.get("SSH_ORIGINAL_COMMAND", "").strip()
+    if not original:
+        warn("serve 模式需由 SSH 调用（$SSH_ORIGINAL_COMMAND 为空）")
+        return EXIT_USAGE
+
+    parts = original.split()
+    sub, sub_args = parts[0], parts[1:]
+    start = time.time()
+
+    # ---- 策略：仅在带设备身份时启用（本地管理员调用不受限） ----
+    if device_id is not None:
+        ok, reason = check_device(device_id)
+        if not ok:
+            audit(device_id, sub, sub_args[0] if sub_args else "", "denied",
+                  int((time.time() - start) * 1000), reason)
+            warn("拒绝: %s" % reason)
+            return EXIT_POLICY
+
+        devices, _ = load_devices()
+        ok, reason = check_rate_limit(device_id, devices.get(device_id))
+        if not ok:
+            audit(device_id, sub, sub_args[0] if sub_args else "", "denied",
+                  int((time.time() - start) * 1000), reason)
+            warn("拒绝: %s" % reason)
+            return EXIT_POLICY
+
+    # ---- 执行 ----
+    try:
+        rc = dispatch(sub, sub_args)
+    except SystemExit as e:            # die() 走的是 SystemExit
+        rc = e.code if isinstance(e.code, int) else EXIT_INTERNAL
+
+    audit(device_id, sub, sub_args[0] if sub_args else "",
+          "ok" if rc == 0 else "error",
+          int((time.time() - start) * 1000),
+          "" if rc == 0 else "exit=%s" % rc)
+    return rc
+
+
+# ---------------------------------------------------------------- 分发
+
+COMMANDS = {
+    "ping": cmd_ping,
+    "getpub": cmd_getpub,
+    "sign": cmd_sign,
+    "info": cmd_info,
+    "genkey": cmd_genkey,
+    "serve": cmd_serve,
+    "audit": cmd_audit,
+}
+
+
+def dispatch(name, args):
+    handler = COMMANDS.get(name)
+    if handler is None:
+        die(EXIT_USAGE, "未知子命令: %s\n可用: %s"
+            % (name, " ".join(sorted(COMMANDS))))
+    return handler(args)
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__.strip(), file=sys.stderr)
+        return EXIT_USAGE
+    return dispatch(argv[1], argv[2:])
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv))
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 — 顶层兜底，避免把 traceback 泄给设备
+        print("%s: internal error: %s" % (SERVICE_NAME, exc), file=sys.stderr)
+        sys.exit(EXIT_INTERNAL)

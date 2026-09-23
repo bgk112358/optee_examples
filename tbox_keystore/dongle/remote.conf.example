@@ -1,0 +1,61 @@
+# TBox 远程签名狗 — 设备端配置 (docs/32 §7.6)
+#
+# 部署到设备：/etc/tbox/dongle/remote.conf
+# 查找顺序：$TBOX_REMOTE_DONGLE_CONF → <插件目录>/remote.conf → 上述默认路径
+# 任一键都可用环境变量覆盖：TBOX_REMOTE_DONGLE_<KEY>，例如
+#   TBOX_REMOTE_DONGLE_HOST=signer.lab  TBOX_REMOTE_DONGLE_TIMEOUT_MS=5000
+#
+# 改完不需要重编插件：配置在插件 open() 时读取。
+
+# ============================================================
+# 形态一：上位机（已实现）
+# ============================================================
+transport = ssh
+
+# 远端签名服务器
+host = signer.example.com
+user = tbox-device
+port = 22
+
+# 本设备专属的 SSH 身份（**每设备一把**，见 docs/32 §7.5）
+# 生成：ssh-keygen -t ed25519 -f /etc/tbox/dongle/id_ed25519 -N ""
+# 公钥登记到签名服务器的 authorized_keys（并填进 devices.json）
+key = /etc/tbox/dongle/id_ed25519
+
+# 主机密钥预置文件。**必须预置**：插件强制 StrictHostKeyChecking=yes，
+# 没有它就连不上——这是刻意的，防止 MITM 伪造成签名服务器。
+known_hosts = /etc/tbox/dongle/known_hosts
+# 首次获取：ssh-keyscan -p 22 signer.example.com > /etc/tbox/dongle/known_hosts
+
+# SSH 客户端。嵌入式上常是 dropbear 的 dbclient，不是 openssh 的 ssh。
+ssh_bin = ssh
+
+# 单次调用总超时（毫秒）。probe() 也用它，太大会拖慢每次启动。
+timeout_ms = 2000
+
+# ---- remote_cmd：远端命令前缀。**推荐部署下留空** ----
+#
+# 本方案推荐的部署是 sshd 强制命令：
+#     command="/opt/tbox-dongle-sign/tbox-dongle-sign serve --device X",no-pty,... <设备公钥>
+# 此时 sshd 负责执行服务，客户端敲的整串会作为 $SSH_ORIGINAL_COMMAND 交给它。
+# 所以插件必须**只发子命令**（如 `getpub`）——留空即可：
+remote_cmd =
+#
+# 只有当你用的是「普通 shell 账号」（没有 command= 强制命令）时，才需要写出完整命令：
+# remote_cmd = /opt/tbox-dongle-sign/tbox-dongle-sign
+#
+# ⚠️ 在强制命令模式下填了它（例如 `tbox-dongle-sign`），服务会把这个名字
+#    当成子命令名 → 报 `未知子命令: tbox-dongle-sign`。
+
+
+# ============================================================
+# 形态二：云端（**接口已预留，尚未实现** — docs/32 §7.4 / P9）
+# ============================================================
+# 把上面 transport 改成 http_mtls 会把 SSH 相关键全部忽略。
+# 目前选它会**明确报错**（不会静默成功），故请先保持 ssh。
+#
+# transport   = http_mtls
+# endpoint    = https://ca.example.com/v1/dongle
+# client_cert = /etc/tbox/dongle/device.crt     # 双向 TLS 的设备证书
+# client_key  = /etc/tbox/dongle/device.key
+# timeout_ms  = 2000

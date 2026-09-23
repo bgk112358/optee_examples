@@ -72,7 +72,9 @@ void       so_pin_auto_lock(void);
 int        so_pin_is_unlocked(void);
 void       so_pin_get_info(struct so_status *st);
 void       so_pin_restore(void);
-void       so_unlock_confirm(void);
+TEE_Result so_unlock_confirm(const uint8_t *pubkey_der, size_t der_len,
+			     const uint8_t *sig, size_t sig_len,
+			     const uint8_t *challenge, size_t challenge_len);
 
 /* Session-level challenge state for two-phase unlock */
 static uint8_t g_so_challenge[32];
@@ -631,14 +633,16 @@ static TEE_Result cmd_so_unlock_confirm(uint32_t pt,
 					TEE_Param params[TEE_NUM_PARAMS])
 {
 	const uint32_t exp_pt = TEE_PARAM_TYPES(
-		TEE_PARAM_TYPE_NONE,
-		TEE_PARAM_TYPE_NONE,
+		TEE_PARAM_TYPE_MEMREF_INPUT,	/* dongle public key DER */
+		TEE_PARAM_TYPE_MEMREF_INPUT,	/* RSA signature         */
 		TEE_PARAM_TYPE_NONE,
 		TEE_PARAM_TYPE_NONE);
 
-	(void)params;
+	TEE_Result res;
 
-	if (pt != exp_pt)
+	if (pt != exp_pt ||
+	    !params[0].memref.buffer || params[0].memref.size == 0 ||
+	    !params[1].memref.buffer || params[1].memref.size == 0)
 		return TEE_ERROR_BAD_PARAMETERS;
 
 	if (!g_so_challenge_valid) {
@@ -646,9 +650,18 @@ static TEE_Result cmd_so_unlock_confirm(uint32_t pt,
 		return TEE_ERROR_BAD_STATE;
 	}
 
+	/*
+	 * Consume the challenge up-front: it is single-use, so a failed or
+	 * replayed attempt cannot be retried against the same challenge.
+	 */
 	g_so_challenge_valid = 0;
-	so_unlock_confirm();
-	return TEE_SUCCESS;
+
+	res = so_unlock_confirm(params[0].memref.buffer, params[0].memref.size,
+				params[1].memref.buffer, params[1].memref.size,
+				g_so_challenge, sizeof(g_so_challenge));
+
+	memset(g_so_challenge, 0, sizeof(g_so_challenge));
+	return res;
 }
 
 static TEE_Result cmd_so_get_info(uint32_t pt,

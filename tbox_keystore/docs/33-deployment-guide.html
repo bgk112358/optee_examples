@@ -1,0 +1,1641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Dongle 部署手册</title>
+<style>  @page { size: A4; margin: 13mm 12mm 13mm 12mm; }
+  @media screen { body { max-width:185mm; margin:0 auto; padding:24px 0;
+                         font-size:10.5pt; line-height:1.7; } }
+  @media print {
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact;
+           font-size:9.1pt; line-height:1.4; orphans:2; widows:2; }
+    h1.part { page-break-before: always; }
+    h1, h2, h3, h4 { page-break-after: avoid; }
+    .no-print { display:none; }
+    p { margin:3px 0; }
+    h1 { font-size:14pt;  margin:10px 0 6px 0; padding-bottom:3px; }
+    h2 { font-size:12pt;  margin:10px 0 4px 0; padding-bottom:2px; }
+    h3 { font-size:10.4pt; margin:7px 0 3px 0; }
+    h4 { font-size:9.6pt; margin:5px 0 2px 0; }
+    table { margin:4px 0 7px 0; font-size:8.4pt; }
+    th, td { padding:2.5px 4px; }
+    pre { margin:4px 0 7px 0; padding:5px 8px; font-size:7.7pt; line-height:1.28; }
+    pre.ascii-diagram { font-size:7.3pt; line-height:1.18; }
+    blockquote { margin:5px 0; padding:5px 9px; font-size:8.9pt; }
+    blockquote p { margin:3px 0; }
+    blockquote pre { margin:3px 0 5px 0; }
+    blockquote table { font-size:8.1pt; }
+    ul, ol { margin:2px 0 6px 0; padding-left:18px; }
+    li { margin:1px 0; }
+    hr { margin:8px 0; }
+    .cover { padding:40mm 0 0 0; }
+    .toc { font-size:9.6pt; }
+    .toc > ul > li { margin:3px 0; }
+    .toc ul ul li { margin:1px 0; font-size:9pt; }
+    .footer { margin-top:14px; padding-top:6px; }
+  }
+  body { font-family:"Noto Sans SC","Source Han Sans CN","Microsoft YaHei","SimSun",sans-serif;
+         color:#1a1a1a; }
+  .cover { text-align:center; }
+  .cover h1 { font-size:25pt; font-weight:700; margin:0 0 10px 0; letter-spacing:2px;
+              border:none; padding:0; }
+  .cover .sub { font-size:12pt; color:#555; margin-bottom:34px; }
+  .cover .divider { width:58%; height:1px; background:#1a1a1a; margin:22px auto; }
+  .cover .meta { font-size:10pt; color:#777; }
+  .cover .meta p { margin:3px 0; }
+  h1 { font-size:18pt; font-weight:700; padding-bottom:5px; border-bottom:2px solid #1a1a1a; }
+  h2 { font-size:15pt; font-weight:700; padding-bottom:4px; border-bottom:1.5px solid #1a1a1a; }
+  h3 { font-size:12.5pt; font-weight:600; }
+  h4 { font-size:11pt; font-weight:600; }
+  table { width:100%; border-collapse:collapse; }
+  th { background:#1a1a1a; color:#fff; text-align:left; font-weight:600; }
+  td { border-bottom:1px solid #ccc; vertical-align:top; }
+  tr:nth-child(even) td { background:#f7f7f7; }
+  code { font-family:"JetBrains Mono","Consolas","Courier New",monospace; font-size:0.92em;
+         background:#f0f0f0; padding:1px 4px; border-radius:2px; }
+  pre { background:#f4f4f4; border:1px solid #ddd; border-left:3px solid #1a1a1a; overflow-x:auto; }
+  pre code { background:none; padding:0; }
+  pre.ascii-diagram { white-space: pre; }
+  blockquote { background:#fffbe6; border-left:4px solid #d4a017; }
+  blockquote h2, blockquote h3, blockquote h4 { border:none; padding:0; margin:6px 0 4px 0;
+               font-size:1.05em; }
+  blockquote pre { background:#fff8d8; }
+  hr { border:none; border-top:1px solid #ddd; }
+  .toc ul { list-style:none; padding-left:0; margin:0; }
+  .toc > ul > li { font-weight:600; }
+  .toc ul ul { padding-left:20px; }
+  .toc ul ul li { font-weight:400; }
+  .toc a { color:#1a1a1a; text-decoration:none; }
+  .footer { text-align:center; font-size:9pt; color:#999; border-top:1px solid #ccc; }
+  /* Mermaid 图：屏幕居中，打印时尽量不跨页断开 */
+  .mermaid { text-align:center; margin:10px 0; }
+  .mermaid svg { max-width:100%; height:auto; }
+  @media print { .mermaid { page-break-inside:avoid; } .mermaid svg { max-height:215mm; } }
+</style>
+</head>
+<body>
+<div class="cover">
+  <h1>Dongle 部署手册</h1>
+  <div class="sub">两种形态的完整部署 · 灌装 · 售后解锁</div>
+  <div class="divider"></div>
+  <div class="meta">
+    <p>面向对象：部署工程师（交付 / 运维）</p>
+    <p>来源文件：docs/33-deployment-guide.md</p>
+    <p>生成日期：2026-09-23</p>
+  </div>
+</div>
+<div style="page-break-before:always;"></div>
+<h1 style="border:none;">目录</h1>
+<div class="toc">
+<ul>
+<li><a href="#0-5">0. 先用 5 分钟弄清楚你要部署什么</a><ul>
+<li><a href="#01">0.1 这套东西是干什么的</a></li>
+<li><a href="#02">0.2 两种形态怎么选</a></li>
+<li><a href="#03">0.3 名词表（后面会一直用到）</a></li>
+<li><a href="#04">0.4 关键前提（先看这条，否则会卡住）</a></li>
+</ul>
+</li>
+<li><a href="#_1">第一部分：准备工作</a><ul>
+<li><a href="#1">1. 环境要求</a><ul>
+<li><a href="#11">1.1 开发机（用来编译，一次性）</a></li>
+<li><a href="#12-t-box">1.2 设备（T-Box）</a></li>
+<li><a href="#13-b">1.3 上位机（仅形态 B 需要）</a></li>
+</ul>
+</li>
+<li><a href="#2">2. 编译（在开发机上执行一次）</a></li>
+</ul>
+</li>
+<li><a href="#_2">第二部分：把文件部署到设备</a><ul>
+<li><a href="#3">3. 设备端文件部署（两种形态都要做）</a><ul>
+<li><a href="#31-dongle">3.1 插件目录与 --dongle 的解析规则</a></li>
+<li><a href="#ld_library_path">⚠️ 别用 LD_LIBRARY_PATH——它对这个不生效</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#a">第三部分：形态 A —— 本地软狗（开发/测试用）</a><ul>
+<li><a href="#4">4. 生成软狗密钥（= 插入狗）</a></li>
+<li><a href="#5">5. 确认设备已认出这只狗</a></li>
+</ul>
+</li>
+<li><a href="#b">第四部分：形态 B —— 远程签名狗（生产用）</a><ul>
+<li><a href="#_3">第一部分：上位机（签名服务器）</a><ul>
+<li><a href="#6">6. 安装依赖</a></li>
+<li><a href="#7">7. 部署服务程序</a></li>
+<li><a href="#8">8. 生成签名私钥（这是整套系统的信任根）</a></li>
+<li><a href="#9-ssh">9. 建立服务账号 · 交接文件属主 · 配置 SSH 强制命令</a></li>
+<li><a href="#shell-shell-usrsbinnologin-binfalse">⚠️ shell 必须是真 shell——不能填 /usr/sbin/nologin 或 /bin/false</a></li>
+<li><a href="#sudo-u-tbox-signer-mkdir-p-tbox-signerssh">⚠️ 不要用 sudo -u tbox-signer mkdir -p ~tbox-signer/.ssh</a></li>
+<li><a href="#chown">⚠️ 只 chown 私钥文件是不够的——目录也要改</a></li>
+<li><a href="#_4">🔍 一次性自检：四处属主一起查</a></li>
+<li><a href="#10-devicesjson">10. 建立设备白名单 devices.json</a></li>
+<li><a href="#11_1">11. （可选，推荐）开启指纹校验</a></li>
+<li><a href="#12">12. 上位机自检</a></li>
+</ul>
+</li>
+<li><a href="#_5">第二部分：设备端</a><ul>
+<li><a href="#13-ssh">13. 生成设备专属 SSH 身份（每台设备一把，不要共用）</a></li>
+<li><a href="#14-known_hosts">14. 预置 known_hosts（这步不能省）</a></li>
+<li><a href="#15-remoteconf">15. 写设备端配置 remote.conf</a></li>
+<li><a href="#remote_cmd">⚠️ remote_cmd 为什么必须留空</a></li>
+<li><a href="#16">16. 设备端连通性自检</a></li>
+</ul>
+</li>
+<li><a href="#_6">第三部分：登记白名单与首次灌装</a><ul>
+<li><a href="#17-ta">17. 把签名服务器的公钥登记进 TA 白名单</a></li>
+<li><a href="#18">18. 首次灌装完整流程（顺序不能变）</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#_7">第五部分：售后解锁（实际使用时）</a><ul>
+<li><a href="#19">19. 解锁</a></li>
+<li><a href="#20-b">20. 查看审计日志（形态 B）</a></li>
+</ul>
+</li>
+<li><a href="#_8">第六部分：验收清单</a><ul>
+<li><a href="#21">21. 部署验收</a></li>
+<li><a href="#22">22. ★ 安全验收（最重要的一条）</a></li>
+<li><a href="#23">23. 记录归档（交给运维）</a></li>
+</ul>
+</li>
+<li><a href="#_9">第七部分：故障排查（按现象查）</a><ul>
+<li><a href="#24">24. 设备端</a></li>
+<li><a href="#25-b">25. 上位机（B）</a></li>
+</ul>
+</li>
+<li><a href="#_10">第八部分：安全注意事项（交付时必须交代）</a><ul>
+<li><a href="#26">26. 必须遵守</a></li>
+<li><a href="#27">27. 已知限制（如实告知，便于你们评估）</a></li>
+<li><a href="#a_1">附录 A：文件路径速查</a></li>
+<li><a href="#b_1">附录 B：命令速查</a></li>
+<li><a href="#c">附录 C：环境变量（调试用）</a></li>
+<li><a href="#_11">相关文档</a></li>
+</ul>
+</li>
+</ul>
+</div>
+
+<div style="page-break-before:always;"></div>
+<blockquote>
+<p><strong>读者</strong>：负责把这套东西部署到实际设备上的工程师。
+<strong>前提</strong>：不需要读过本项目的其他文档，照做即可。每一步都给了<strong>验证方法</strong>，
+做完能看到明确结果再进下一步。</p>
+<p>覆盖两种 dongle 形态的完整部署、灌装与售后解锁流程。
+设计背景见 <a href="32-dongle-plugin-architecture.md">docs/32</a>，本文只讲"怎么做"。</p>
+</blockquote>
+<hr />
+<h2 id="0-5">0. 先用 5 分钟弄清楚你要部署什么</h2>
+<h3 id="01">0.1 这套东西是干什么的</h3>
+<p>设备出厂后写保护会被"锁死"，防止别人再往里塞密钥。但售后总有要换密钥／换件的时候，
+所以留了一条<strong>需要"加密狗"才能打开的解锁通道</strong>——而且要求 <strong>SO-PIN + 加密狗双因子</strong>。</p>
+<p>"加密狗"有两种实现，本文都覆盖：</p>
+<pre class="ascii-diagram"><code>┌───────────────────────────── 设备 (T-Box) ────────────────────────────┐
+│  keystore (命令行工具)                                                │
+│      │                                                                │
+│      ▼                                                                │
+│  /oemdata/opt/optee/dongle/ ← 插件目录，--dongle dummy 开 dummy.so    │
+│      ├── dummy.so    ┐                                                │
+│      └── remote.so   ┘  两个插件，任选其一或都装                      │
+└───────────────────────────────────────────────────────────────────────┘
+        │                                    │
+        │ (dummy)                            │ (remote)
+        ▼                                    ▼
+  读本地 dummy.key                   ssh 到【上位机】请求签名
+  （私钥就在设备上）                  （私钥只在上位机，设备上没有）
+</code></pre>
+<h3 id="02">0.2 两种形态怎么选</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><strong>形态 A：本地软狗</strong></th>
+<th><strong>形态 B：远程签名狗</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>私钥在哪</td>
+<td><strong>设备上</strong>（一个密钥文件）</td>
+<td><strong>上位机</strong>（设备上只有 SSH 身份）</td>
+</tr>
+<tr>
+<td>设备被 root / 被克隆</td>
+<td>拷走文件即可伪造 → <strong>不安全</strong></td>
+<td>拿不到私钥 → <strong>安全</strong></td>
+</tr>
+<tr>
+<td>需要网络</td>
+<td>不需要</td>
+<td>解锁时需要能连到上位机</td>
+</tr>
+<tr>
+<td><strong>适用场景</strong></td>
+<td>开发、测试、CI、演示</td>
+<td><strong>生产、现场售后</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>生产环境请用形态 B。</strong> 形态 A 的价值是"没硬件也能开发和验证流程"。</p>
+</blockquote>
+<h3 id="03">0.3 名词表（后面会一直用到）</h3>
+<table>
+<thead>
+<tr>
+<th>名词</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PIN</strong></td>
+<td>出厂灌装的一次性口令，表示"这台设备已归属"。没灌 PIN，TA 不干任何活</td>
+</tr>
+<tr>
+<td><strong>SO-PIN</strong></td>
+<td>Security Officer 口令，解锁用的第一因子。<strong>必须先灌装，且只能一次</strong></td>
+</tr>
+<tr>
+<td><strong>dongle 白名单</strong></td>
+<td>TA 内部保存的"允许解锁的狗"的公钥哈希列表（最多 8 条）</td>
+</tr>
+<tr>
+<td><strong>锁定 / <code>--lock</code></strong></td>
+<td>出厂动作，锁死后禁止生成/删除密钥</td>
+</tr>
+<tr>
+<td><strong>解锁 / <code>--so-unlock</code></strong></td>
+<td>售后动作，需要 SO-PIN + 白名单里的狗</td>
+</tr>
+</tbody>
+</table>
+<h3 id="04">0.4 关键前提（<strong>先看这条，否则会卡住</strong>）</h3>
+<blockquote>
+<p><strong>产品以 OP-TEE 3.2 为准。</strong> 本方案已改造成 <strong>RSA-2048</strong>，
+因为 OP-TEE 3.2 <strong>无法在安全世界里验 ECDSA 签名</strong>（会 panic）。
+因此：<strong>所有狗都必须是 RSA-2048</strong>，不能再用 ECDSA/P-256（包括 YubiKey 出厂预置的那种）。</p>
+</blockquote>
+<hr />
+<h1 class="part" id="_1">第一部分：准备工作</h1>
+<h2 id="1">1. 环境要求</h2>
+<h3 id="11">1.1 开发机（用来编译，一次性）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>系统</td>
+<td>Linux x86_64</td>
+</tr>
+<tr>
+<td>用途</td>
+<td>编译 TA、CA、插件</td>
+</tr>
+</tbody>
+</table>
+<h3 id="12-t-box">1.2 设备（T-Box）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TEE</td>
+<td>OP-TEE 3.2（产品版本）</td>
+</tr>
+<tr>
+<td>目录</td>
+<td><code>/lib/optee_armtz/</code>（放 TA）、<code>/usr/bin/</code>、<code>/usr/lib/</code></td>
+</tr>
+<tr>
+<td>已装库</td>
+<td><code>libssl.so.1.1</code> / <code>libcrypto.so.1.1</code>（CA 和插件要用；<strong>一般镜像里已有</strong>）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>⚠️ 设备上<strong>通常没有 <code>openssl</code> 命令行</strong>——本文所有需要生成密钥的地方，
+都已改用随本方案提供的 <code>dummy_genkey</code> 工具，不依赖 <code>openssl</code> CLI。</p>
+</blockquote>
+<h3 id="13-b">1.3 上位机（仅形态 B 需要）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>系统</td>
+<td>Ubuntu（或同类 Linux）</td>
+</tr>
+<tr>
+<td>软件</td>
+<td><code>python3</code>、<code>python3-cryptography</code>、<code>openssh-server</code></td>
+</tr>
+<tr>
+<td>网络</td>
+<td>设备能 SSH 到它（生产环境建议内网/VPN，不要暴露公网）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 编译（在开发机上执行一次）</h2>
+<pre><code class="language-bash">cd &lt;源码根&gt;/optee_examples_AG519M
+mkdir -p build &amp;&amp; cd build
+
+# 指定交叉编译器（按你实际的工具链路径改）
+cmake .. -DCMAKE_C_COMPILER=&lt;工具链&gt;/aarch64-none-linux-gnu-gcc
+make keystore dummy_genkey dummy_plugin remote_plugin
+</code></pre>
+<p><strong>产物在这两个地方</strong>（注意不在一起）：</p>
+<table>
+<thead>
+<tr>
+<th>产物</th>
+<th>路径</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>keystore</code></td>
+<td><code>build/tbox_keystore/keystore</code></td>
+<td>设备端命令行工具（CA）</td>
+</tr>
+<tr>
+<td><code>dummy.so</code></td>
+<td><code>build/tbox_keystore/dongle/dummy.so</code></td>
+<td>插件：本地软狗</td>
+</tr>
+<tr>
+<td><code>remote.so</code></td>
+<td><code>build/tbox_keystore/dongle/remote.so</code></td>
+<td>插件：远程签名狗</td>
+</tr>
+<tr>
+<td><code>dummy_genkey</code></td>
+<td><code>build/tbox_keystore/dongle/dummy_genkey</code></td>
+<td>设备端密钥生成工具</td>
+</tr>
+</tbody>
+</table>
+<p>TA 单独编译：</p>
+<pre><code class="language-bash">cd &lt;源码根&gt;/optee_examples_AG519M/tbox_keystore/ta
+export TA_DEV_KIT_DIR=&lt;optee_os&gt;/out/arm/export-ta_arm64
+export CROSS_COMPILE=&lt;工具链&gt;/aarch64-none-linux-gnu-
+make
+# 产物：f8e9209a-3c7d-4d6b-a15e-7f328b11c049.ta
+</code></pre>
+<p><strong>验证</strong>：四个产物文件都存在且非空。</p>
+<hr />
+<h1 class="part" id="_2">第二部分：把文件部署到设备</h1>
+<h2 id="3">3. 设备端文件部署（两种形态都要做）</h2>
+<p>把编译产物拷到设备上（用 scp、U 盘、镜像打包均可）。</p>
+<table>
+<thead>
+<tr>
+<th align="center">#</th>
+<th>文件</th>
+<th>设备目标路径</th>
+<th>权限</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="center">1</td>
+<td><code>f8e9209a-3c7d-4d6b-a15e-7f328b11c049.ta</code></td>
+<td><code>/lib/optee_armtz/</code></td>
+<td>644</td>
+</tr>
+<tr>
+<td align="center">2</td>
+<td><code>keystore</code></td>
+<td><code>/usr/bin/</code></td>
+<td>755</td>
+</tr>
+<tr>
+<td align="center">3</td>
+<td><code>dummy_genkey</code></td>
+<td><code>/usr/bin/</code></td>
+<td>755</td>
+</tr>
+<tr>
+<td align="center">4</td>
+<td>插件（按形态选）</td>
+<td><code>/oemdata/opt/optee/dongle/</code></td>
+<td>755</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-bash"># 在设备上执行
+DGN=/oemdata/opt/optee/dongle          # 默认插件目录（可换，见下方说明）
+mkdir -p &quot;$DGN&quot;
+
+# 按你的形态把插件拷进去：
+#   形态 A： cp dummy.so  &quot;$DGN/&quot;
+#   形态 B： cp remote.so &quot;$DGN/&quot;
+# 两个都装也可以：--dongle dummy / --dongle remote 各开各的；
+# 不带 --dongle 时自动探测会按优先级选
+</code></pre>
+<p><strong>验证</strong>：</p>
+<pre><code class="language-bash">ls -l /lib/optee_armtz/f8e9209a-*.ta
+ls -l /usr/bin/keystore /usr/bin/dummy_genkey
+ls -l /oemdata/opt/optee/dongle/
+keystore --help | head -3        # 能打印用法即部署成功
+</code></pre>
+<h3 id="31-dongle">3.1 插件目录与 <code>--dongle</code> 的解析规则</h3>
+<p><code>/oemdata/opt/optee/dongle</code> 只是<strong>编译期默认值</strong>，运行时用 <code>TBOX_DONGLE_DIR</code> 覆盖：</p>
+<pre><code class="language-bash">export TBOX_DONGLE_DIR=/opt/my-plugins
+keystore --so-info
+</code></pre>
+<p><strong><code>--dongle &lt;name&gt;</code> 直接打开 <code>&lt;插件目录&gt;/&lt;name&gt;.so</code>，不遍历目录</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>你输入的命令</th>
+<th>实际打开的文件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--dongle dummy</code></td>
+<td><code>&lt;插件目录&gt;/dummy.so</code></td>
+</tr>
+<tr>
+<td><code>--dongle remote</code></td>
+<td><code>&lt;插件目录&gt;/remote.so</code></td>
+</tr>
+<tr>
+<td>（不带 <code>--dongle</code>）</td>
+<td>扫描目录下所有 <code>*.so</code>，按 <code>priority</code> 自动探测</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>覆盖方式</td>
+<td>环境变量 <code>TBOX_DONGLE_DIR</code>（进程级，<strong>不是</strong>编译期）</td>
+</tr>
+<tr>
+<td>只读一个目录</td>
+<td><strong>不支持</strong>多个目录；<code>TBOX_DONGLE_DIR=/a:/b</code> 会被当成一个名叫 <code>/a:/b</code> 的目录</td>
+</tr>
+<tr>
+<td><strong>名字不能带路径</strong></td>
+<td><code>--dongle /opt/x.so</code>、<code>--dongle ../x</code> <strong>会被拒绝</strong>——只接受纯文件名（<code>.so</code> 后缀由程序自己加，所以也别写 <code>.so</code>）</td>
+</tr>
+<tr>
+<td>文件名必须叫 <code>&lt;name&gt;.so</code></td>
+<td>名字就是文件名。若插件文件叫 <code>impl.so</code>，<code>--dongle impl</code> 才能找到它</td>
+</tr>
+<tr>
+<td>软狗密钥也要跟着走</td>
+<td>形态 A 下 <code>dummy.key</code> 是<strong>放在插件目录里</strong>的（<code>&lt;插件目录&gt;/dummy.key</code>），目录一换、密钥位置也跟着换</td>
+</tr>
+<tr>
+<td><code>remote.conf</code> 也能跟着走</td>
+<td>找不到 <code>/etc/tbox/dongle/remote.conf</code> 时，会找 <code>&lt;插件目录&gt;/remote.conf</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>💡 <strong>按名加载只会打开那一个文件</strong>——目录里其他 <code>.so</code> 完全不会被碰。
+所以目录里放了一个无关的坏 <code>.so</code> 时，按名加载不受影响
+（只有不带 <code>--dongle</code> 的自动探测才会去扫它）。</p>
+<h3 id="ld_library_path">⚠️ 别用 <code>LD_LIBRARY_PATH</code>——它对这个<strong>不生效</strong></h3>
+<p>插件是<strong>程序自己 <code>dlopen</code> 打开</strong>的（按 <code>&lt;目录&gt;/&lt;名字&gt;.so</code> 的完整路径），
+<strong>不是</strong>由动态链接器按库搜索路径解析的。所以：</p>
+<ul>
+<li>设 <code>LD_LIBRARY_PATH=/your/plugins</code> → <strong>插件照样找不到</strong></li>
+<li>正确做法是设 <strong><code>TBOX_DONGLE_DIR</code></strong></li>
+</ul>
+<p>为什么这么设计：自动探测要<strong>扫描目录里所有 <code>*.so</code> 并逐个加载</strong>。
+若接到 <code>LD_LIBRARY_PATH</code> 上（那里常有 <code>/usr/lib</code>、<code>/lib</code>），
+会去尝试加载几百个无关系统库——<strong>慢、刷屏，而且扩大了攻击面</strong>
+（插件是"能拿狗私钥签名"的驱动，加载谁不该由通用库路径决定）。</p>
+<p>✅ <strong><code>LD_LIBRARY_PATH</code> 仍然有用</strong>，但作用在<strong>另一件事</strong>上：解析插件自身的依赖
+（如 <code>dummy.so</code> 需要 <code>libssl.so.1.1</code> / <code>libcrypto.so.1.1</code>）。</p>
+</blockquote>
+<hr />
+<h1 class="part" id="a">第三部分：形态 A —— 本地软狗（开发/测试用）</h1>
+<blockquote>
+<p>私钥就是一个文件，<strong>放在设备上</strong>。仅用于开发验证，不要用于生产。</p>
+</blockquote>
+<h2 id="4">4. 生成软狗密钥（= 插入狗）</h2>
+<pre><code class="language-bash">dummy_genkey /oemdata/opt/optee/dongle/dummy.key
+</code></pre>
+<p><strong>验证</strong>：看到 <code>Dummy dongle key generated: ... (RSA-2048)</code>，
+且 <code>/oemdata/opt/optee/dongle/</code> 下同时有 <code>dummy.so</code> 和 <code>dummy.key</code>。</p>
+<blockquote>
+<p><strong>这就是"插狗"的意思</strong>：插件目录里 <code>.so</code>（驱动）+ 同名 <code>.key</code>（狗内私钥）齐备。
+<strong>拔狗 = 删掉 <code>dummy.key</code></strong>（下次运行即探测不到）。</p>
+</blockquote>
+<h2 id="5">5. 确认设备已认出这只狗</h2>
+<pre><code class="language-bash">keystore --provision-dongle --dongle dummy
+</code></pre>
+<ul>
+<li><strong>正常</strong>：<code>[dongle] loaded plugin: dummy (RSA-2048)</code> → <code>Dongle registered in TA whitelist.</code></li>
+<li><strong>报 <code>Cannot open key file</code></strong>：密钥没放对位置（见 §4）</li>
+<li><strong>报 <code>No dongle available</code></strong>：插件没加载——确认 <code>&lt;插件目录&gt;/dummy.so</code> 存在（按名加载找的就是这个名字），或 ABI 不匹配。报错上一行会打印请求的完整路径和目录里已装的 <code>*.so</code></li>
+</ul>
+<blockquote>
+<p>如果这一步报 <code>devices.json 不存在</code> 之类，那是形态 B 的东西，形态 A 用不到。</p>
+</blockquote>
+<p>然后跳到 <strong>第六部分</strong>（灌装与解锁）。</p>
+<hr />
+<h1 class="part" id="b">第四部分：形态 B —— 远程签名狗（生产用）</h1>
+<blockquote>
+<p>私钥<strong>只存在于上位机</strong>。设备上只有一把 SSH 身份密钥。
+分三小段做：<strong>① 上位机 → ② 设备端 → ③ 登记与解锁</strong>。</p>
+</blockquote>
+<h2 id="_3">第一部分：上位机（签名服务器）</h2>
+<h3 id="6">6. 安装依赖</h3>
+<pre><code class="language-bash">sudo apt update
+sudo apt install python3 python3-cryptography openssh-server
+python3 -c &quot;import cryptography; print('cryptography', cryptography.__version__)&quot;
+# 能打印版本号即 OK
+</code></pre>
+<h3 id="7">7. 部署服务程序</h3>
+<p>把源码里的 <code>tbox_keystore/remote-signer/tbox-dongle-sign</code> 拷到上位机：</p>
+<pre><code class="language-bash">sudo mkdir -p /opt/tbox-dongle-sign
+sudo cp tbox-dongle-sign /opt/tbox-dongle-sign/
+sudo chmod 755 /opt/tbox-dongle-sign/tbox-dongle-sign
+</code></pre>
+<h3 id="8">8. 生成签名私钥（<strong>这是整套系统的信任根</strong>）</h3>
+<p>在上位机上执行（<strong>不经过 SSH</strong>，管理员本地操作）：</p>
+<pre><code class="language-bash">sudo /opt/tbox-dongle-sign/tbox-dongle-sign genkey
+</code></pre>
+<p>输出类似：</p>
+<pre class="ascii-diagram"><code>私钥已生成: /opt/tbox-dongle-sign/keys/dongle.pem (2048 位, 权限 0600)
+公钥 SHA-256: 3f2a...（记下来，稍后要和设备端白名单对账）
+</code></pre>
+<p><strong>验证</strong>：</p>
+<pre><code class="language-bash">sudo ls -l /opt/tbox-dongle-sign/keys/dongle.pem     # 权限必须是 0600
+sudo /opt/tbox-dongle-sign/tbox-dongle-sign info     # 能打印 key_type=RSA-2048
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>这把私钥泄露 = 所有设备都能被解锁</strong>。请按你们的安全规范保管
+（建议放加密磁盘、限制登录、留存备份）。</p>
+<p>📌 这里用 <code>sudo</code> 生成，私钥属主是 <strong>root</strong>；而服务以 <code>tbox-signer</code> 运行，
+所以<strong>必须在 §9.3 把属主交给它</strong>，否则服务读不到自己的私钥。</p>
+</blockquote>
+<h3 id="9-ssh">9. 建立服务账号 · 交接文件属主 · 配置 SSH 强制命令</h3>
+<h4 id="91">9.1 建服务账号</h4>
+<p>账号不存在的话，后面所有 <code>sudo -u tbox-signer</code> 都会直接报 <code>unknown user</code>：</p>
+<pre><code class="language-bash">sudo useradd -m -d /home/tbox-signer -s /bin/bash tbox-signer
+sudo passwd -l tbox-signer          # 锁掉密码登录：只允许公钥
+
+# ⚠️ 确认家目录真的建出来了
+getent passwd tbox-signer           # shell 必须是 /bin/bash；家目录必须是 /home/tbox-signer
+sudo ls -ld /home/tbox-signer       # 必须存在，且属主是 tbox-signer
+</code></pre>
+<blockquote>
+<p>⚠️ <strong><code>-m</code> 漏了会很难查</strong>：家目录不存在时，问题不会在这里报错，而是到 §9.2
+才以 <code>chmod: cannot access ...: No such file or directory</code> 的形式暴露出来。
+所以上面两条检查<strong>不要跳过</strong>。</p>
+<h3 id="shell-shell-usrsbinnologin-binfalse">⚠️ shell 必须是<strong>真 shell</strong>——不能填 <code>/usr/sbin/nologin</code> 或 <code>/bin/false</code></h3>
+<p>这是最容易踩的一个坑。<code>sshd_config(5)</code> 原文：</p>
+<blockquote>
+<p><em>"The command is invoked by using the user's login shell with the <code>-c</code> option."</em></p>
+</blockquote>
+<p>也就是说，sshd 执行 <code>authorized_keys</code> 里的 <code>command=</code> 时，实际动作是
+<strong><code>$登录shell -c '那条命令'</code></strong>。shell 设成 <code>nologin</code>，sshd 去执行的就是
+<code>nologin</code> 而不是你的服务——<strong>强制命令永远不生效</strong>（OpenSSH 邮件列表里
+Debian Buildbot 用户就踩过：<code>getpwnam</code> 返回 <code>/usr/sbin/nologin</code> 导致失败）。</p>
+<p>限制手段是<strong>下面的 <code>command=</code> + 四组 <code>no-*</code> 选项</strong>，不是 nologin。</p>
+</blockquote>
+<h4 id="92-authorized_keys">9.2 准备 <code>authorized_keys</code></h4>
+<pre><code class="language-bash"># 以 root 执行 + 显式指定属主，一步到位
+sudo install -d -o tbox-signer -g tbox-signer -m 700 /home/tbox-signer/.ssh
+sudo install -o tbox-signer -g tbox-signer -m 600 /dev/null /home/tbox-signer/.ssh/authorized_keys
+</code></pre>
+<p><strong>验证</strong>：</p>
+<pre><code class="language-bash">sudo ls -ld /home/tbox-signer /home/tbox-signer/.ssh
+sudo ls -l  /home/tbox-signer/.ssh/authorized_keys
+</code></pre>
+<p>应看到 <code>.ssh</code> 是 <code>700 tbox-signer tbox-signer</code>、<code>authorized_keys</code> 是 <code>600 tbox-signer tbox-signer</code>。</p>
+<blockquote>
+<h3 id="sudo-u-tbox-signer-mkdir-p-tbox-signerssh">⚠️ 不要用 <code>sudo -u tbox-signer mkdir -p ~tbox-signer/.ssh</code></h3>
+<p>那是<strong>以 <code>tbox-signer</code> 的身份</strong>建目录。家目录不存在时，它需要先创建
+<code>/home/tbox-signer</code>，而 <code>/home</code> 通常是 <code>root:root 755</code> —— 它没有这个权限，
+于是 <code>mkdir</code> 静默失败，<strong>错误要到后面的 <code>chmod</code> 才以
+<code>No such file or directory</code> 的形式冒出来</strong>，指向的却不是你真正做错的那一步。</p>
+<p>用 <code>install -d</code> 以 root 执行就没这个问题：父目录会被一并建出，
+属主/权限一次设对，不依赖 <code>sudo</code> 切换身份后的权限。</p>
+</blockquote>
+<p>然后<strong>为每台设备追加一行</strong>（把 <code>&lt;设备公钥&gt;</code> 换成你在 §13 生成的设备公钥）：</p>
+<pre class="ascii-diagram"><code>command=&quot;/opt/tbox-dongle-sign/tbox-dongle-sign serve --device device-001&quot;,no-port-forwarding,no-pty,no-agent-forwarding,no-X11-forwarding ssh-ed25519 &lt;设备公钥&gt; device-001
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>两个极易出错的点</strong>：
+1. <strong>设备 ID 必须写进 <code>command=</code> 里</strong>（<code>serve --device device-001</code>）。
+   行尾那个 <code>device-001</code> 只是注释，<strong>不会传给程序</strong>——只写注释的话服务认不出设备。
+2. 一行只能放<strong>一台设备</strong>。<strong>吊销设备 = 删掉这一行</strong>。</p>
+</blockquote>
+<h4 id="93">9.3 把关键文件交给服务账号（<strong>漏了这步服务跑不起来</strong>）</h4>
+<p>§7 / §8 里的文件是用 <code>sudo</code> 建的，属主是 <strong>root</strong>；而服务以 <code>tbox-signer</code>
+运行，<strong>读不到自己的私钥</strong>。必须改属主：</p>
+<pre><code class="language-bash"># ① 签名私钥所在的**目录**——必须一起改！
+#    genkey 以 root 运行，会把该目录建成 0700 root；
+#    服务账号进不去这个目录，连&quot;文件存不存在&quot;都判断不了。
+sudo chown -R tbox-signer:tbox-signer /opt/tbox-dongle-sign/keys
+sudo chmod 700 /opt/tbox-dongle-sign/keys
+
+# ② 私钥文件本身
+sudo chown tbox-signer:tbox-signer /opt/tbox-dongle-sign/keys/dongle.pem
+sudo chmod 600 /opt/tbox-dongle-sign/keys/dongle.pem
+
+# ③ 服务运行期目录：限流状态 + 审计日志
+sudo install -d -o tbox-signer -g tbox-signer -m 700 /var/lib/tbox-dongle
+sudo install -d -o tbox-signer -g tbox-signer -m 700 /var/log/tbox-dongle
+</code></pre>
+<blockquote>
+<h3 id="chown">⚠️ 只 chown 私钥文件是<strong>不够的</strong>——目录也要改</h3>
+<p><code>genkey</code> 内部是 <code>os.makedirs(key_dir, mode=0o700)</code>，所以
+<code>/opt/tbox-dongle-sign/keys/</code> 是 <strong>0700 root</strong>。</p>
+<p><strong>只把 <code>dongle.pem</code> 改属主，服务照样起不来</strong>，而且报错极具误导性：</p>
+<p><code>tbox-dongle-sign: error: 私钥不存在: /opt/tbox-dongle-sign/keys/dongle.pem
+  先执行: ... genkey</code></p>
+<p>说"不存在"，但 <code>ls</code> 明明看得见。原因是 <code>os.path.exists()</code> 在
+<strong>父目录不可进入</strong>时也返回 <code>False</code>（它吞掉了 <code>EACCES</code>）——
+于是"权限问题"被报成了"文件不存在"。</p>
+<blockquote>
+<p>旧版服务就是这个误导性报错。现版本已区分开：
+父目录不可进入时会明确报 <strong>"私钥读不到（</strong>不是<strong>不存在）"</strong> 并给出 <code>chown</code> 命令。</p>
+</blockquote>
+<p>所以上面的 <strong>① 目录</strong> 和 <strong>② 文件</strong> 两条都要执行。</p>
+</blockquote>
+<p><strong>验证（就在这一步做，别拖到后面）</strong>：</p>
+<pre><code class="language-bash"># 必须加 -u：用 sudo 跑是以 root 身份执行，属主没配对也照样通过——验不出问题
+sudo -u tbox-signer /opt/tbox-dongle-sign/tbox-dongle-sign info
+</code></pre>
+<p>看到 <code>key_type=RSA-2048</code> 和三行路径<strong>都打印出来</strong>才算过。
+若停在 <code>私钥读不到</code> / <code>私钥不存在</code>，回到上面把 ① 目录的 <code>chown -R</code> 补上。</p>
+<blockquote>
+<h3 id="_4">🔍 一次性自检：四处属主一起查</h3>
+<p>这一节和 §10 加起来有<strong>四处</strong>要交给服务账号，漏掉任何一处都会在<strong>后面某个不相干的时机</strong>
+才炸出来（而且报错往往指向别的地方）。跑这一段，逐条确认：</p>
+<p><code>bash
+sudo -u tbox-signer test -r /opt/tbox-dongle-sign/keys/dongle.pem \
+  &amp;&amp; echo "① 私钥        OK" || echo "① 私钥        FAIL — 见 §9.3"
+sudo -u tbox-signer test -w /var/lib/tbox-dongle \
+  &amp;&amp; echo "② 状态目录    OK" || echo "② 状态目录    FAIL — 见 §9.3"
+sudo -u tbox-signer test -w /var/log/tbox-dongle \
+  &amp;&amp; echo "③ 审计目录    OK" || echo "③ 审计目录    FAIL — 见 §9.3"
+sudo -u tbox-signer test -r /opt/tbox-dongle-sign/devices.json \
+  &amp;&amp; echo "④ 白名单      OK" || echo "④ 白名单      FAIL — 见 §10"</code></p>
+<p>四条都 <code>OK</code> 才算这一节做完（④ 要等 §10 建完 <code>devices.json</code> 才有意义）。</p>
+<p>⚠️ <strong><code>devices.json</code> 的属主在 §10 建完文件后一起改</strong>（那里给了命令）。
+这三处（私钥 / 白名单 / 运行期目录）是同一类问题：文件是 root 建的、
+服务是 <code>tbox-signer</code> 跑的。</p>
+<p>🔒 <strong>安全权衡（要意识到）</strong>：私钥必须对 <code>tbox-signer</code> 可读，而设备正是
+以这个账号认证的。所以「拿到 <code>tbox-signer</code> 的 shell」=「拿到签名母钥」。
+<code>command=</code> 与四组 <code>no-*</code> 是<strong>唯一屏障</strong>——务必逐字核对 9.2 的格式。</p>
+</blockquote>
+<h3 id="10-devicesjson">10. 建立设备白名单 <code>devices.json</code></h3>
+<pre><code class="language-bash">sudo cp /opt/tbox-dongle-sign/devices.json.example /opt/tbox-dongle-sign/devices.json
+sudo chmod 600 /opt/tbox-dongle-sign/devices.json
+sudo vi /opt/tbox-dongle-sign/devices.json
+
+# 交给服务账号（同 §9.3）——不改的话服务读不到白名单
+sudo chown tbox-signer:tbox-signer /opt/tbox-dongle-sign/devices.json
+</code></pre>
+<p>内容格式（<strong>每台设备一条</strong>）：</p>
+<pre><code class="language-json">{
+  &quot;devices&quot;: [
+    {
+      &quot;id&quot;: &quot;device-001&quot;,
+      &quot;enabled&quot;: true,
+      &quot;fingerprint&quot;: &quot;SHA256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&quot;,
+      &quot;rate_limit&quot;: { &quot;max&quot;: 30, &quot;window_sec&quot;: 60 },
+      &quot;note&quot;: &quot;产线第一批&quot;
+    }
+  ],
+  &quot;default_policy&quot;: &quot;deny&quot;
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th align="center">必填</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td align="center">✅</td>
+<td>必须与 authorized_keys 里的 <code>--device</code> <strong>完全一致</strong></td>
+</tr>
+<tr>
+<td><code>enabled</code></td>
+<td align="center">✅</td>
+<td><code>false</code> = 停用（保留记录便于审计）</td>
+</tr>
+<tr>
+<td><code>fingerprint</code></td>
+<td align="center">选填</td>
+<td>填了就启用指纹校验，见 §11</td>
+</tr>
+<tr>
+<td><code>rate_limit</code></td>
+<td align="center">选填</td>
+<td><code>max</code> 次 / <code>window_sec</code> 秒；不填=不限频</td>
+</tr>
+<tr>
+<td><code>note</code></td>
+<td align="center">选填</td>
+<td>给人看的备注</td>
+</tr>
+</tbody>
+</table>
+<p><strong>验证</strong>：</p>
+<pre><code class="language-bash">sudo /opt/tbox-dongle-sign/tbox-dongle-sign audit --tail 5   # 能跑（暂时空）
+
+# 关键：以服务账号的身份验证 §9.3 的属主交接是否生效
+sudo -u tbox-signer /opt/tbox-dongle-sign/tbox-dongle-sign info      # 能读到私钥
+sudo -u tbox-signer /opt/tbox-dongle-sign/tbox-dongle-sign audit --tail 5
+</code></pre>
+<blockquote>
+<p>⚠️ 上面两条<strong>必须用 <code>sudo -u tbox-signer</code> 跑</strong>。用 <code>sudo</code> 跑是以 root 身份
+执行，属主没配对也照样通过——<strong>验不出问题</strong>。</p>
+<p>⚠️ <strong><code>devices.json</code> 不存在时，带设备身份的调用一律拒绝</strong>（失败关闭）。
+这是刻意的：宁可拒绝，也不要放行一台没登记的设备。</p>
+</blockquote>
+<h3 id="11_1">11. （可选，推荐）开启指纹校验</h3>
+<p>只靠 authorized_keys 的 <code>--device</code> 标签，无法防止"有人拿到别人的公钥文件来冒用"。
+开启指纹校验后，服务会拿<strong>本次 SSH 认证实际使用的公钥</strong>去比对：</p>
+<pre><code class="language-bash"># 1) 在上位机 sshd 配置里开启
+sudo sh -c 'echo &quot;ExposeAuthInfo yes&quot; &gt;&gt; /etc/ssh/sshd_config'
+sudo systemctl restart ssh
+
+# 2) 取设备公钥的指纹，填进 devices.json 的 fingerprint 字段
+ssh-keygen -lf /path/to/device-001.pub
+# → SHA256:xxxx...    （把 &quot;SHA256:xxxx...&quot; 整串填进去）
+</code></pre>
+<blockquote>
+<p><strong>配了指纹却没开 <code>ExposeAuthInfo</code></strong> → 调用会被<strong>拒绝</strong>（不会静默放行），
+报错信息会明确告诉你原因。</p>
+</blockquote>
+<h3 id="12">12. 上位机自检</h3>
+<pre><code class="language-bash"># 服务自身是否正常
+sudo -u tbox-signer /opt/tbox-dongle-sign/tbox-dongle-sign ping
+# 期望输出：OK
+
+# 端到端（在本机模拟一次 SSH 调用）
+sudo -u tbox-signer ssh -i &lt;某台设备的私钥&gt; localhost \
+    &quot;ping&quot; 2&gt;/dev/null
+# 注意：实际使用时子命令由客户端传入，这里只验证 SSH 强制命令能跑通
+</code></pre>
+<hr />
+<h2 id="_5">第二部分：设备端</h2>
+<h3 id="13-ssh">13. 生成设备专属 SSH 身份（<strong>每台设备一把，不要共用</strong>）</h3>
+<pre><code class="language-bash">mkdir -p -m 700 /etc/tbox/dongle
+ssh-keygen -t ed25519 -N &quot;&quot; -f /etc/tbox/dongle/id_ed25519
+cat /etc/tbox/dongle/id_ed25519.pub
+</code></pre>
+<ul>
+<li>把 <strong><code>.pub</code> 的内容</strong>交给上位机管理员，写进 §9 的 <code>authorized_keys</code></li>
+<li><strong><code>.pub</code> 的指纹</strong>（<code>ssh-keygen -lf /etc/tbox/dongle/id_ed25519.pub</code>）填进 §10 的 <code>fingerprint</code></li>
+</ul>
+<blockquote>
+<p><strong>为什么每台设备要独立</strong>：服务端靠这个身份区分"是哪台设备在请求"。
+如果所有设备共用一个身份，<strong>一台设备被攻陷就等于所有设备可被签名</strong>。</p>
+</blockquote>
+<h3 id="14-known_hosts">14. 预置 <code>known_hosts</code>（<strong>这步不能省</strong>）</h3>
+<p>插件<strong>强制校验服务器主机密钥</strong>（<code>StrictHostKeyChecking=yes</code>），没有它连不上：</p>
+<pre><code class="language-bash">ssh-keyscan -p 22 &lt;上位机地址&gt; &gt; /etc/tbox/dongle/known_hosts
+chmod 600 /etc/tbox/dongle/known_hosts
+</code></pre>
+<blockquote>
+<p><strong>为什么强制</strong>：不校验主机密钥，攻击者就能冒充签名服务器骗设备把 challenge 发过去。</p>
+<p>⚠️ <strong>上线前请与上位机管理员核对这个文件的指纹</strong>，确保拿到的是真服务器的密钥。</p>
+</blockquote>
+<h3 id="15-remoteconf">15. 写设备端配置 <code>remote.conf</code></h3>
+<pre><code class="language-bash">cp /path/to/remote.conf.example /etc/tbox/dongle/remote.conf
+vi /etc/tbox/dongle/remote.conf
+</code></pre>
+<p>最小配置（其余保持默认）：</p>
+<pre><code class="language-ini">transport = ssh
+host      = &lt;上位机地址&gt;
+user      = tbox-signer
+port      = 22
+key         = /etc/tbox/dongle/id_ed25519
+known_hosts = /etc/tbox/dongle/known_hosts
+timeout_ms  = 2000
+remote_cmd  =                    # ← 留空！见下方说明
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>键</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>host</code> / <code>user</code> / <code>port</code></td>
+<td>上位机地址与签名服务账号</td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>§13 生成的设备身份私钥</td>
+</tr>
+<tr>
+<td><code>known_hosts</code></td>
+<td>§14 预置的文件</td>
+</tr>
+<tr>
+<td><code>remote_cmd</code></td>
+<td><strong>留空</strong>（推荐部署下）。理由见下</td>
+</tr>
+<tr>
+<td><code>ssh_bin</code></td>
+<td>SSH 客户端程序。<strong>嵌入式上常是 dropbear 的 <code>dbclient</code> 而不是 <code>ssh</code></strong>，按实际改</td>
+</tr>
+<tr>
+<td><code>timeout_ms</code></td>
+<td>单次调用总超时；<code>probe</code>（探测）也用它，别设太大</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<h3 id="remote_cmd">⚠️ <code>remote_cmd</code> 为什么必须留空</h3>
+<p>配合 §9 的 sshd 强制命令部署，<strong>sshd 负责执行服务</strong>，客户端敲的整串会作为
+<code>$SSH_ORIGINAL_COMMAND</code> 交给它。所以插件必须<strong>只发子命令</strong>（如 <code>getpub</code>）。</p>
+<p><strong>如果这里填了 <code>tbox-dongle-sign</code></strong>，服务会把这个名字当成子命令名，
+报错 <code>未知子命令: tbox-dongle-sign</code>，<strong>部署直接卡住</strong>。</p>
+<p>只有当你们用的是<strong>普通 shell 账号</strong>（没有 <code>command=</code> 强制命令）时，才需要填完整命令：
+<code>remote_cmd = /opt/tbox-dongle-sign/tbox-dongle-sign</code></p>
+<p>未列出的键保持默认即可。配置内容<strong>不需要重新编译插件</strong>，改完直接生效。</p>
+</blockquote>
+<h3 id="16">16. 设备端连通性自检</h3>
+<pre><code class="language-bash">keystore --provision-dongle --dongle remote
+</code></pre>
+<ul>
+<li><strong>正常</strong>：<code>[remote] connected: tbox-signer@&lt;上位机&gt; (294-byte pubkey)</code></li>
+<li><strong><code>Cannot open known_hosts</code> / <code>Host key verification failed</code></strong> → 回到 §14</li>
+<li><strong><code>Permission denied</code></strong> → 设备公钥没加到上位机 authorized_keys（§9），或 <code>key</code> 路径不对</li>
+<li><strong><code>RESERVED, not implemented</code></strong> → 配置文件里 <code>transport</code> 写成了 <code>http_mtls</code>，改成 <code>ssh</code></li>
+<li><strong>卡住约 2 秒后失败</strong> → 网络不通或上位机 sshd 没起（<code>timeout_ms</code> 生效，属正常保护）</li>
+</ul>
+<hr />
+<h2 id="_6">第三部分：登记白名单与首次灌装</h2>
+<h3 id="17-ta">17. 把签名服务器的公钥登记进 TA 白名单</h3>
+<p><strong>在上位机上</strong>导出公钥：</p>
+<pre><code class="language-bash">sudo /opt/tbox-dongle-sign/tbox-dongle-sign getpub
+# 输出一串 hex
+</code></pre>
+<p><strong>在设备上</strong>存成 DER 文件并登记：</p>
+<pre><code class="language-bash"># 方式一：上位机输出重定向过来（hex → 二进制）
+ssh tbox-signer@&lt;上位机&gt; &quot;tbox-dongle-sign getpub&quot; | tr -d '\n' | xxd -r -p &gt; /tmp/signer-pub.der
+
+# 方式二：手动把 hex 存成文件后转换
+# echo &quot;&lt;粘贴 hex&gt;&quot; | tr -d '\n' | xxd -r -p &gt; /tmp/signer-pub.der
+
+# 登记
+keystore --provision-dongle-from-file /tmp/signer-pub.der
+</code></pre>
+<p><strong>验证</strong>：输出 <code>Dongle registered from file: /tmp/signer-pub.der</code></p>
+<blockquote>
+<p>这一步把"允许解锁的狗"写进 TA。<strong>每台设备都要单独登记</strong>。
+登记必须在 <code>--lock</code> 之前完成，否则会被写保护拒绝。</p>
+</blockquote>
+<h3 id="18">18. 首次灌装完整流程（<strong>顺序不能变</strong>）</h3>
+<blockquote>
+<p>⚠️ 三条硬性顺序约束，违反就会失败：
+1. <code>--init-pin</code> / <code>--init-so-pin</code> <strong>只能各执行一次</strong>
+2. <code>--init-so-pin</code> <strong>必须在 <code>--so-unlock</code> 之前</strong>（没灌 SO-PIN 无法解锁）
+3. <code>--provision-dongle*</code> <strong>必须在 <code>--lock</code> 之前</strong>（锁后写操作被禁）</p>
+</blockquote>
+<pre><code class="language-bash">CLI=keystore          # 产物名，按实际改
+
+# ① 灌装普通 PIN（一次性）
+$CLI --init-pin 31323334
+
+# ② 灌装 SO-PIN（一次性）—— 换成你们自己的口令，务必记录归档
+$CLI --init-so-pin &lt;SO-PIN hex&gt;
+
+# ③ 生成业务密钥（按项目需要，示例）
+$CLI --gen-rsa device-key --size 2048 --sign --decrypt
+
+# ④ 登记狗的白名单
+#    形态 A：$CLI --provision-dongle --dongle dummy
+#    形态 B：$CLI --provision-dongle-from-file /tmp/signer-pub.der   （见 §17）
+
+# ⑤ 查看确认
+$CLI --so-info
+
+# ⑥ 出厂锁定（**最后一次写操作**）
+$CLI --lock
+</code></pre>
+<p><strong>⑤ 的期望输出</strong>：</p>
+<pre class="ascii-diagram"><code>SO State:       PROVISIONED
+Dongles:        1 registered
+Failures:       0 consecutive, 0 total (max 3/1000)
+</code></pre>
+<p><strong>⑥ 的验证</strong>（锁定应生效）：</p>
+<pre><code class="language-bash">$CLI --gen-rsa test-key --size 2048
+# 期望：失败（write operation denied）——失败才是对的
+</code></pre>
+<blockquote>
+<p><strong>SO-PIN 的 <code>hex</code> 是什么</strong>：你选的一串字节的十六进制表示。例如想要 "1234"
+就写 <code>31323334</code>。<strong><code>--init-so-pin</code> 和 <code>--so-unlock</code> 必须用完全相同的值</strong>。
+请按公司安全规范记录归档——<strong>丢了 SO-PIN 且没有狗，设备就再也解不开锁</strong>。</p>
+</blockquote>
+<hr />
+<h1 class="part" id="_7">第五部分：售后解锁（实际使用时）</h1>
+<h2 id="19">19. 解锁</h2>
+<pre><code class="language-bash">CLI=keystore
+
+# ① 先看当前状态
+$CLI --so-info
+
+# ② 解锁
+#    形态 A：
+$CLI --so-unlock --so-pin &lt;SO-PIN hex&gt; --dongle dummy
+#    形态 B：
+$CLI --so-unlock --so-pin &lt;SO-PIN hex&gt; --dongle remote
+
+# ③ 维护操作（生成/删除密钥等）……
+$CLI --gen-rsa temp-key --size 2048 --sign
+
+# ④ ★ 收尾：重新锁上
+$CLI --so-lock
+$CLI --so-info        # 确认回到 LOCKED
+</code></pre>
+<p><strong>② 的期望输出</strong>：<code>✓ SO unlock successful. TA is now UNLOCKED.</code></p>
+<blockquote>
+<p>⚠️ <strong>④ 的收尾不要漏</strong>：解锁状态<strong>不会自动过期</strong>（设计中提到的空闲超时<strong>尚未实现</strong>）。
+忘了 <code>--so-lock</code>，写保护就一直开着。<strong>请把"维护完必锁"写进你们的作业规范。</strong></p>
+</blockquote>
+<h2 id="20-b">20. 查看审计日志（形态 B）</h2>
+<pre><code class="language-bash"># 最近 20 条
+sudo /opt/tbox-dongle-sign/tbox-dongle-sign audit --tail 20
+
+# 只看某台设备 / 只看被拒绝的 / 看最近一天
+sudo /opt/tbox-dongle-sign/tbox-dongle-sign audit --device device-001 --since 1d
+sudo /opt/tbox-dongle-sign/tbox-dongle-sign audit --result denied --tail 50
+
+# 原始 JSON（便于导入你们的日志系统）
+sudo /opt/tbox-dongle-sign/tbox-dongle-sign audit --json --tail 100
+</code></pre>
+<p>审计文件：<code>/var/log/tbox-dongle/audit.jsonl</code>（每行一条 JSON，
+含 <code>ts/device/fp/action/digest/result/ms/src/reason</code>）。</p>
+<hr />
+<h1 class="part" id="_8">第六部分：验收清单</h1>
+<p>按顺序打勾，<strong>任何一项不过就不要继续</strong>。</p>
+<h2 id="21">21. 部署验收</h2>
+<table>
+<thead>
+<tr>
+<th align="center">#</th>
+<th>检查项</th>
+<th>命令 / 方法</th>
+<th>期望</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="center">1</td>
+<td>TA 已部署</td>
+<td><code>ls /lib/optee_armtz/f8e9209a-*.ta</code></td>
+<td>文件存在</td>
+</tr>
+<tr>
+<td align="center">2</td>
+<td>CLI 可用</td>
+<td><code>keystore --help</code></td>
+<td>打印用法</td>
+</tr>
+<tr>
+<td align="center">3</td>
+<td>插件已加载</td>
+<td><code>keystore --so-info</code></td>
+<td>无 "plugin 加载失败" 报错</td>
+</tr>
+<tr>
+<td align="center">4</td>
+<td><strong>狗可被探测</strong>（A）</td>
+<td>见 §5</td>
+<td>登记成功</td>
+</tr>
+<tr>
+<td align="center">5</td>
+<td><strong>狗可被探测</strong>（B）</td>
+<td>见 §16</td>
+<td><code>connected: ... (294-byte pubkey)</code></td>
+</tr>
+<tr>
+<td align="center">6</td>
+<td>上位机服务正常（B）</td>
+<td><code>tbox-dongle-sign ping</code></td>
+<td><code>OK</code></td>
+</tr>
+<tr>
+<td align="center">7</td>
+<td>白名单已配（B）</td>
+<td>见 §10</td>
+<td><code>devices.json</code> 含该设备且 <code>enabled:true</code></td>
+</tr>
+<tr>
+<td align="center">8</td>
+<td>SO-PIN 已灌装</td>
+<td><code>keystore --so-info</code></td>
+<td><code>SO State: PROVISIONED</code>（或 LOCKED）</td>
+</tr>
+<tr>
+<td align="center">9</td>
+<td>狗已登记</td>
+<td><code>keystore --so-info</code></td>
+<td><code>Dongles: 1 registered</code></td>
+</tr>
+<tr>
+<td align="center">10</td>
+<td>写保护已生效</td>
+<td><code>keystore --gen-rsa test --size 2048</code></td>
+<td><strong>失败</strong>（预期）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="22">22. ★ 安全验收（最重要的一条）</h2>
+<p><strong>目的</strong>：证明"换一把没登记的狗解不开锁"——也就是说 <strong>TA 真的在验签，而不是走形式</strong>。</p>
+<pre><code class="language-bash">CLI=keystore
+
+# 1) 准备一把&quot;未登记&quot;的狗
+#    形态 A：
+dummy_genkey /tmp/other.key
+export TBOX_DONGLE_KEY_DUMMY=/tmp/other.key     # ← 必须用这个变量！见下方警告
+#    形态 B：用另一台未登记设备的 SSH 身份，或临时把 devices.json 里该设备置 false
+
+# 2) 尝试解锁 —— 必须失败
+$CLI --so-unlock --so-pin &lt;SO-PIN hex&gt; --dongle dummy
+#    期望：TA rejected unlock: bad signature, or dongle not in TA whitelist
+
+# 3) 换回已登记的狗 —— 必须成功
+unset TBOX_DONGLE_KEY_DUMMY
+$CLI --so-unlock --so-pin &lt;SO-PIN hex&gt; --dongle dummy
+#    期望：✓ SO unlock successful
+$CLI --so-lock
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>形态 A 的坑</strong>：换狗必须用 <strong><code>TBOX_DONGLE_KEY_DUMMY</code></strong>。
+用 <code>TBOX_DUMMY_KEY</code> 会被插件目录里的 <code>dummy.key</code> <strong>覆盖</strong>，
+那样你测的其实是<strong>已登记的那把狗</strong>，会得出<strong>相反的错误结论</strong>。
+（若真发生，插件会打印 <code>warning: $TBOX_DUMMY_KEY=... is IGNORED</code> —— 看到就该警觉。）</p>
+<p><strong>形态 B 的坑</strong>：<code>TBOX_DONGLE_DIR</code> 默认指向 <code>/oemdata/opt/optee/dongle</code>；
+换 identity 请改 <code>remote.conf</code> 的 <code>key</code> 或 <code>devices.json</code> 的 <code>enabled</code>。</p>
+</blockquote>
+<h2 id="23">23. 记录归档（交给运维）</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>记录内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SO-PIN</td>
+<td><strong>按公司规范密封归档</strong></td>
+</tr>
+<tr>
+<td>签名私钥（B）</td>
+<td>备份位置、保管人</td>
+</tr>
+<tr>
+<td><code>devices.json</code>（B）</td>
+<td>版本快照</td>
+</tr>
+<tr>
+<td><code>known_hosts</code>（B）</td>
+<td>指纹核对记录</td>
+</tr>
+<tr>
+<td>本设备序列号 ↔ <code>device id</code> 对照表（B）</td>
+<td>便于日后吊销</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 class="part" id="_9">第七部分：故障排查（按现象查）</h1>
+<h2 id="24">24. 设备端</h2>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>No dongle available</code></td>
+<td>插件没加载，或文件名不对</td>
+<td>① 确认 <code>&lt;插件目录&gt;/&lt;name&gt;.so</code> 存在（<code>--dongle dummy</code> 找的是 <code>dummy.so</code>）② 上一行的报错会打印<strong>请求的完整路径</strong>和目录里已装的 <code>*.so</code></td>
+</tr>
+<tr>
+<td>插件放在别处、找不到</td>
+<td>没设 <code>TBOX_DONGLE_DIR</code></td>
+<td><code>export TBOX_DONGLE_DIR=&lt;你的目录&gt;</code>（<strong>§3.1</strong>）</td>
+</tr>
+<tr>
+<td>设了 <code>LD_LIBRARY_PATH</code> 仍找不到插件</td>
+<td><strong>该变量对插件加载不生效</strong></td>
+<td>改用 <code>TBOX_DONGLE_DIR</code>（<strong>§3.1</strong> 有解释）</td>
+</tr>
+<tr>
+<td><strong><code>--dongle dummy.so</code></strong> 报找不到 <code>dummy.so.so</code></td>
+<td>名字里<strong>不要带 <code>.so</code></strong>——后缀由程序自己加</td>
+<td>改回 <code>--dongle dummy</code></td>
+</tr>
+<tr>
+<td><strong><code>--dongle /opt/x.so</code></strong> 被拒（<code>invalid backend name</code>）</td>
+<td><strong>不接受路径</strong>，只接受纯文件名（<code>[A-Za-z0-9._-]</code>）</td>
+<td>把插件放进 <code>TBOX_DONGLE_DIR</code>，然后用 <code>--dongle &lt;文件名去掉.so&gt;</code></td>
+</tr>
+<tr>
+<td>插件文件叫 <code>impl.so</code>，<code>--dongle impl</code> 找不到</td>
+<td>旧版按插件<strong>自报名字</strong>匹配，新版按<strong>文件名</strong>解析</td>
+<td>把文件改名为 <code>&lt;name&gt;.so</code>（<strong>行为变更</strong>，见 §3.1）</td>
+</tr>
+<tr>
+<td><code>... is not a dongle plugin</code></td>
+<td>该 <code>.so</code> 不是 dongle 插件（缺导出符号）</td>
+<td>换成正确的插件文件。按名加载时<strong>只有被点名的那个</strong>会被加载</td>
+</tr>
+<tr>
+<td><code>ABI mismatch (plugin=N, host=M)</code></td>
+<td>插件与 CA 版本不配套</td>
+<td><strong>重新一起编译并同时部署</strong></td>
+</tr>
+<tr>
+<td><code>Cannot open key file</code> (A)</td>
+<td><code>dummy.key</code> 位置/权限不对</td>
+<td>放到 <code>/oemdata/opt/optee/dongle/dummy.key</code></td>
+</tr>
+<tr>
+<td><code>warning: $TBOX_DUMMY_KEY=... is IGNORED</code></td>
+<td>目录里的 <code>.key</code> 优先于该变量</td>
+<td>换狗用 <code>TBOX_DONGLE_KEY_DUMMY</code></td>
+</tr>
+<tr>
+<td><code>ssh: host not configured</code> (B)</td>
+<td><code>remote.conf</code> 没配或路径不对</td>
+<td>见 §15</td>
+</tr>
+<tr>
+<td><code>未知子命令: tbox-dongle-sign</code> (B)</td>
+<td><code>remote_cmd</code> 不该填却填了</td>
+<td>强制命令模式下<strong>必须留空</strong>（§15）</td>
+</tr>
+<tr>
+<td><code>Host key verification failed</code> (B)</td>
+<td><code>known_hosts</code> 缺失或不匹配</td>
+<td>见 §14，并核对指纹</td>
+</tr>
+<tr>
+<td><code>getpub failed (rc=3)</code> (B)</td>
+<td>上位机没有签名私钥</td>
+<td>在上位机执行 <code>genkey</code>（§8）</td>
+</tr>
+<tr>
+<td><code>TA rejected unlock: ...</code></td>
+<td>签名无效／狗不在白名单</td>
+<td>① 确认狗已登记（§17）② 确认狗是<strong>同一把</strong>③ 形态 B 看审计日志</td>
+</tr>
+<tr>
+<td><code>SO-PIN not provisioned</code></td>
+<td>没执行 <code>--init-so-pin</code></td>
+<td>见 §18 第 ② 步</td>
+</tr>
+<tr>
+<td><code>PIN not yet provisioned</code></td>
+<td>没执行 <code>--init-pin</code></td>
+<td>见 §18 第 ① 步</td>
+</tr>
+<tr>
+<td><code>TA denied the write: locked (run --so-unlock) or no PIN provisioned</code> —— 旧版二进制只显示裸 <strong><code>0xffff0001</code></strong>（= <code>TEE_ERROR_ACCESS_DENIED</code>）</td>
+<td>写保护生效中：TA 已灌装锁定，SO 未解锁</td>
+<td>先 <code>--so-unlock</code>（§19）。若这台 TA <strong>从未灌装</strong>（PIN 未设），改为 <code>--init-pin</code>。用 <code>--so-info</code> 看当前状态</td>
+</tr>
+<tr>
+<td><code>SO cooldown active, N seconds remaining</code></td>
+<td>连续 3 次 SO-PIN 错</td>
+<td>等待 N 秒</td>
+</tr>
+<tr>
+<td><code>SO permanently bricked</code></td>
+<td>累计 1000 次 SO-PIN 失败</td>
+<td><strong>设备报废</strong>，无解</td>
+</tr>
+</tbody>
+</table>
+<h2 id="25-b">25. 上位机（B）</h2>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>unknown user: tbox-signer</code></td>
+<td>服务账号没建</td>
+<td>见 §9.1</td>
+</tr>
+<tr>
+<td><code>chmod: cannot access '.../.ssh/authorized_keys': No such file or directory</code>（<strong>§9.2 的 chmod 步骤</strong>）</td>
+<td>家目录不存在（<code>useradd</code> 漏了 <code>-m</code>）→ <code>sudo -u tbox-signer mkdir</code> 没权限建父目录、<strong>静默失败</strong></td>
+<td>用 §9.1 的两条检查确认家目录；改按 <strong>§9.2</strong> 的 <code>install -d</code> 重建</td>
+</tr>
+<tr>
+<td><code>mkdir: cannot create directory '/home/tbox-signer': Permission denied</code></td>
+<td>同上——以 <code>tbox-signer</code> 身份建目录，而 <code>/home</code> 不可写</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><strong><code>私钥不存在: .../keys/dongle.pem</code></strong>（但 <code>ls</code> 看得见）—— 旧版服务会误报；新版报 <strong><code>私钥读不到（不是不存在）</code></strong></td>
+<td><strong><code>keys/</code> 目录是 0700 root</strong>，服务账号进不去（<code>os.path.exists()</code> 在父目录不可进入时也返回 False）</td>
+<td>见 <strong>§9.3</strong>：<strong>目录和文件都要 <code>chown</code></strong>（<code>chown -R</code> + <code>chmod 700</code>）</td>
+</tr>
+<tr>
+<td><code>私钥无法读取: ... Permission denied</code></td>
+<td>文件在、但权限位不对</td>
+<td><code>chmod 600</code> + <code>chown tbox-signer:tbox-signer</code>（§9.3）</td>
+</tr>
+<tr>
+<td><strong><code>internal error: [Errno 13] Permission denied: '/var/lib/tbox-dongle'</code></strong> —— 旧版服务会这么报（完全看不出该做什么）；新版报 <strong><code>状态目录不可用</code></strong> 并附命令</td>
+<td>§9.3 第 ③ 步没做：服务账号对该目录没有写权限（限流状态要落盘）</td>
+<td><code>sudo install -d -o tbox-signer -g tbox-signer -m 700 /var/lib/tbox-dongle</code>（§9.3）</td>
+</tr>
+<tr>
+<td><code>审计目录不可进入: /var/log/tbox-dongle (权限 0700)</code></td>
+<td>同上，审计目录属主没配对</td>
+<td><code>sudo install -d -o tbox-signer -g tbox-signer -m 700 /var/log/tbox-dongle</code>（§9.3）</td>
+</tr>
+<tr>
+<td><code>devices.json 无法解析: ... Permission denied</code></td>
+<td>白名单属主没交给服务账号（措辞是"无法解析"，实际是读不到）</td>
+<td>见 <strong>§10</strong> 最后的 <code>chown</code></td>
+</tr>
+<tr>
+<td><code>拒绝: devices.json 不存在</code></td>
+<td>没建白名单文件</td>
+<td>见 §10</td>
+</tr>
+<tr>
+<td><code>拒绝: 设备未登记: xxx</code></td>
+<td><code>id</code> 与 <code>--device</code> 不一致</td>
+<td>两处必须逐字相同（§9 / §10）</td>
+</tr>
+<tr>
+<td><code>拒绝: 设备已停用</code></td>
+<td><code>enabled:false</code></td>
+<td>改回 <code>true</code></td>
+</tr>
+<tr>
+<td><code>拒绝: 指纹不匹配</code></td>
+<td>填的指纹与实际公钥不符</td>
+<td>重新 <code>ssh-keygen -lf</code> 取指纹（§11）</td>
+</tr>
+<tr>
+<td><code>... 但 sshd 未开启 ExposeAuthInfo</code></td>
+<td>配了指纹但没开该项</td>
+<td>见 §11 第 1 步</td>
+</tr>
+<tr>
+<td><code>拒绝: 限频触发</code></td>
+<td>超过 <code>rate_limit</code></td>
+<td>调整限额，或等待窗口</td>
+</tr>
+<tr>
+<td><code>审计写入失败</code></td>
+<td><code>/var/log/tbox-dongle</code> 无权限</td>
+<td>检查目录权限（服务账号需可写，见 §9.3）</td>
+</tr>
+<tr>
+<td>设备<strong>能连上但服务执行报错</strong></td>
+<td>shell 设成了 <code>nologin</code>/<code>false</code>，sshd 执行的是 nologin 而不是服务</td>
+<td>改成真 shell（<code>/bin/bash</code>），见 <strong>§9.1</strong></td>
+</tr>
+<tr>
+<td>设备连不上</td>
+<td>网络/防火墙/sshd</td>
+<td>在设备上 <code>ssh tbox-signer@&lt;上位机&gt; ping</code> 手工试</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 class="part" id="_10">第八部分：安全注意事项（交付时必须交代）</h1>
+<h2 id="26">26. 必须遵守</h2>
+<table>
+<thead>
+<tr>
+<th align="center">#</th>
+<th>事项</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="center">1</td>
+<td><strong>生产必须用形态 B</strong>（远程签名狗）；形态 A 的私钥在设备上，可被拷走</td>
+</tr>
+<tr>
+<td align="center">2</td>
+<td><strong>签名私钥只在上位机</strong>，权限 <code>0600</code>，按规范备份与保管</td>
+</tr>
+<tr>
+<td align="center">3</td>
+<td><strong>每台设备独立 SSH 身份</strong>；共用身份 = 一台失陷等于全部</td>
+</tr>
+<tr>
+<td align="center">4</td>
+<td><strong><code>known_hosts</code> 必须与上位机核对指纹</strong>后再上线，绝不能关主机密钥校验</td>
+</tr>
+<tr>
+<td align="center">5</td>
+<td><strong>SO-PIN 归档保管</strong>；丢了 SO-PIN 且没有狗 = 设备永久锁死</td>
+</tr>
+<tr>
+<td align="center">6</td>
+<td><strong>维护完必须 <code>--so-lock</code></strong>（解锁不会自动过期）</td>
+</tr>
+<tr>
+<td align="center">7</td>
+<td><strong>吊销设备</strong>：删 authorized_keys 那一行 + <code>devices.json</code> 置 <code>enabled:false</code></td>
+</tr>
+<tr>
+<td align="center">8</td>
+<td>若设备端被完全攻陷，攻击者能用<strong>这台设备</strong>的身份请求签名——所以<strong>限频与审计要开</strong>，并定期巡检</td>
+</tr>
+</tbody>
+</table>
+<h2 id="27">27. 已知限制（如实告知，便于你们评估）</h2>
+<table>
+<thead>
+<tr>
+<th align="center">#</th>
+<th>限制</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="center">1</td>
+<td><strong>解锁状态不会自动过期</strong></td>
+<td>忘了 <code>--so-lock</code> → 写保护一直开着。设计中提到的"空闲自动锁"<strong>尚未实现</strong></td>
+</tr>
+<tr>
+<td align="center">2</td>
+<td><strong>云端 transport 未实现</strong></td>
+<td>配置里可写 <code>transport = http_mtls</code>，但会明确报错；目前只能用 <code>ssh</code></td>
+</tr>
+<tr>
+<td align="center">3</td>
+<td><strong>批量白名单灌装未实现</strong></td>
+<td>多台设备需逐台 <code>--provision-dongle-from-file</code></td>
+</tr>
+<tr>
+<td align="center">4</td>
+<td><strong>插件不做签名校验</strong></td>
+<td>插件目录里放什么就加载什么；生产环境请限制该目录的写权限，只放必需插件</td>
+</tr>
+<tr>
+<td align="center">5</td>
+<td><strong>YubiKey 硬件狗暂不可用</strong></td>
+<td>源码保留未编译；如需使用需先按插件 ABI 移植并把 PIV 密钥换成 RSA-2048</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="a_1">附录 A：文件路径速查</h2>
+<p><strong>设备端</strong></p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/lib/optee_armtz/f8e9209a-….ta</code></td>
+<td>TA</td>
+</tr>
+<tr>
+<td><code>/usr/bin/keystore</code></td>
+<td>命令行工具（CA）</td>
+</tr>
+<tr>
+<td><code>/usr/bin/dummy_genkey</code></td>
+<td>密钥生成工具（无 openssl CLI 时用）</td>
+</tr>
+<tr>
+<td><code>/oemdata/opt/optee/dongle/dummy.so</code></td>
+<td>插件：本地软狗（<code>--dongle dummy</code> 打开的就是它）</td>
+</tr>
+<tr>
+<td><code>/oemdata/opt/optee/dongle/remote.so</code></td>
+<td>插件：远程签名狗（<code>--dongle remote</code>）</td>
+</tr>
+<tr>
+<td><code>/oemdata/opt/optee/dongle/dummy.key</code></td>
+<td>软狗私钥（<strong>形态 A</strong>）</td>
+</tr>
+<tr>
+<td><code>/etc/tbox/dongle/remote.conf</code></td>
+<td>远程狗配置（形态 B）</td>
+</tr>
+<tr>
+<td><code>/etc/tbox/dongle/id_ed25519</code></td>
+<td>设备 SSH 身份（形态 B）</td>
+</tr>
+<tr>
+<td><code>/etc/tbox/dongle/known_hosts</code></td>
+<td>服务器主机密钥（形态 B）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>上位机（形态 B）</strong></p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/opt/tbox-dongle-sign/tbox-dongle-sign</code></td>
+<td>服务程序</td>
+</tr>
+<tr>
+<td><code>/opt/tbox-dongle-sign/keys/dongle.pem</code></td>
+<td><strong>签名私钥</strong>（0600）</td>
+</tr>
+<tr>
+<td><code>/opt/tbox-dongle-sign/devices.json</code></td>
+<td>设备白名单</td>
+</tr>
+<tr>
+<td><code>/var/log/tbox-dongle/audit.jsonl</code></td>
+<td>审计日志</td>
+</tr>
+<tr>
+<td><code>/var/lib/tbox-dongle/state.json</code></td>
+<td>限频计数状态</td>
+</tr>
+<tr>
+<td><code>~tbox-signer/.ssh/authorized_keys</code></td>
+<td>每台设备一行（含 <code>--device</code>）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="b_1">附录 B：命令速查</h2>
+<pre><code class="language-bash"># —— 首次灌装（顺序固定）——
+keystore --init-pin &lt;hex&gt;
+keystore --init-so-pin &lt;hex&gt;
+keystore --gen-rsa device-key --size 2048 --sign --decrypt
+keystore --provision-dongle --dongle dummy            # 形态 A
+keystore --provision-dongle-from-file &lt;pub.der&gt;       # 形态 B
+keystore --so-info
+keystore --lock
+
+# —— 售后维护 ——
+keystore --so-unlock --so-pin &lt;hex&gt; --dongle dummy    # 或 --dongle remote
+keystore --gen-rsa temp-key --size 2048 --sign
+keystore --so-lock                                    # 别忘
+
+# —— 诊断 ——
+keystore --so-info
+keystore --info &lt;label&gt;
+
+# —— 上位机 ——
+tbox-dongle-sign genkey
+tbox-dongle-sign getpub
+tbox-dongle-sign info
+tbox-dongle-sign ping
+tbox-dongle-sign audit --tail 20
+</code></pre>
+<h2 id="c">附录 C：环境变量（调试用）</h2>
+<p><strong>设备端</strong></p>
+<table>
+<thead>
+<tr>
+<th>变量</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TBOX_DONGLE_DIR</code></td>
+<td><strong>插件目录</strong>（默认 <code>/oemdata/opt/optee/dongle</code>）。换目录、或部署到非默认位置时必须设它；<strong>只支持单个目录</strong>。<code>--dongle &lt;name&gt;</code> 打开的就是 <code>&lt;该目录&gt;/&lt;name&gt;.so</code>（也决定 <code>dummy.key</code> / <code>remote.conf</code> 的位置）。插件加载<strong>不看 <code>LD_LIBRARY_PATH</code></strong>（§3.1）</td>
+</tr>
+<tr>
+<td><code>TBOX_DONGLE_KEY_DUMMY</code></td>
+<td>指定软狗密钥，<strong>优先级最高</strong>（换狗测试用这个）</td>
+</tr>
+<tr>
+<td><code>TBOX_DUMMY_KEY</code></td>
+<td>旧接口指定软狗密钥（<strong>会被插件目录里的 <code>dummy.key</code> 覆盖</strong>）</td>
+</tr>
+<tr>
+<td><code>TBOX_REMOTE_DONGLE_CONF</code></td>
+<td>指定 <code>remote.conf</code> 路径</td>
+</tr>
+<tr>
+<td><code>TBOX_REMOTE_DONGLE_{HOST,USER,PORT,KEY,KNOWN_HOSTS,SSH_BIN,TIMEOUT_MS,CMD}</code></td>
+<td>覆盖对应配置项</td>
+</tr>
+</tbody>
+</table>
+<p><strong>上位机</strong></p>
+<table>
+<thead>
+<tr>
+<th>变量</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TBOX_DONGLE_SIGN_HOME</code></td>
+<td>服务根目录（默认 <code>/opt/tbox-dongle-sign</code>）</td>
+</tr>
+<tr>
+<td><code>TBOX_DONGLE_SIGN_KEY</code></td>
+<td>签名私钥路径</td>
+</tr>
+<tr>
+<td><code>TBOX_DONGLE_SIGN_DEVICES</code></td>
+<td><code>devices.json</code> 路径</td>
+</tr>
+<tr>
+<td><code>TBOX_DONGLE_SIGN_AUDIT</code></td>
+<td>审计日志路径</td>
+</tr>
+<tr>
+<td><code>TBOX_DONGLE_SIGN_STATE</code></td>
+<td>限频状态路径</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_11">相关文档</h2>
+<table>
+<thead>
+<tr>
+<th>文档</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="32-dongle-plugin-architecture.md">32-dongle-plugin-architecture.md</a></td>
+<td>设计与实现（想理解"为什么这样做"看这里）</td>
+</tr>
+<tr>
+<td><a href="31-key-management-and-secure-services.md">31-key-management-and-secure-services.md</a></td>
+<td>密钥管理与安全能力总述（通俗版）</td>
+</tr>
+<tr>
+<td><a href="29-rsa-yubikey-provisioning.md">29-rsa-yubikey-provisioning.md</a></td>
+<td>RSA-2048 方案设计</td>
+</tr>
+<tr>
+<td><a href="28-yubikey-full-lifecycle.md">28-yubikey-full-lifecycle.md</a></td>
+<td>安全缺口的历史分析（已闭合）</td>
+</tr>
+<tr>
+<td><a href="30-ecc-p256-ta-unsupported-debug-log.md">30-ecc-p256-ta-unsupported-debug-log.md</a></td>
+<td>为何必须用 RSA 而非 ECDSA</td>
+</tr>
+</tbody>
+</table>
+<div class="footer">
+  Dongle 部署手册 · 由 docs/33-deployment-guide.md 生成 · 2026-09-23
+</div>
+
+</body>
+</html>

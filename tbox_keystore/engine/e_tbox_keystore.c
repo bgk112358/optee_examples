@@ -68,19 +68,37 @@ static int tbox_rsa_sign(int dtype, const unsigned char *m,
 {
 	const char *label;
 	TEEC_Operation op;
-	unsigned char local_sig[512];
-	unsigned int  req, orig;
-	int use_local, ok;
+	unsigned char local_sig[512];	/* RSA-2048=256B, RSA-4096=512B */
+	unsigned int  req, out_len;
+	int ok;
 
 	label = (const char *)RSA_get_ex_data(rsa, g_ex_idx);
-	orig = *siglen;
 	req  = (unsigned int)RSA_size(rsa);
 	if (req == 0) req = 256;
 
-	LOG("SIGN dtype=%d m_len=%u *siglen=%u req=%u label=%s\n",
-	    dtype, m_len, orig, req, label ? label : "(null)");
+	LOG("SIGN dtype=%d m_len=%u req=%u label=%s\n",
+	    dtype, m_len, req, label ? label : "(null)");
 
 	if (!label || !g_ready) { LOG("SIGN -> 0 (no label/session)\n"); return 0; }
+
+	/*
+	 * NOTE: per the OpenSSL RSA_METHOD contract, *siglen is an OUTPUT
+	 * (the method writes the signature length).  OpenSSL's EVP layer
+	 * passes an uninitialised value in, so it must NOT be read as the
+	 * caller's buffer capacity — doing so is undefined behaviour and on
+	 * some targets yields a huge garbage size that blows up the TEEC
+	 * memref (0xffff000c TEE_ERROR_OUT_OF_MEMORY).
+	 * Always sign into the internal buffer, then copy out.
+	 */
+	if (!sigret || !siglen) {	/* size query only */
+		if (siglen) *siglen = req;
+		return 1;
+	}
+
+	if (req > sizeof(local_sig)) {
+		LOG("SIGN -> 0 (key too large: req=%u)\n", req);
+		return 0;
+	}
 
 	memset(&op, 0, sizeof(op));
 	op.paramTypes = TEEC_PARAM_TYPES(
@@ -90,27 +108,20 @@ static int tbox_rsa_sign(int dtype, const unsigned char *m,
 	op.params[0].tmpref.size   = strlen(label);
 	op.params[1].tmpref.buffer = (void *)m;
 	op.params[1].tmpref.size   = m_len;
-
-	use_local = (*siglen < req);
-	if (use_local) {
-		op.params[2].tmpref.buffer = local_sig;
-		op.params[2].tmpref.size   = sizeof(local_sig);
-	} else {
-		op.params[2].tmpref.buffer = sigret;
-		op.params[2].tmpref.size   = *siglen;
-	}
+	op.params[2].tmpref.buffer = local_sig;
+	op.params[2].tmpref.size   = sizeof(local_sig);
 
 	ok = tee_cmd(CMD_SIGN, &op);
 
 	if (!ok) { LOG("SIGN -> 0 (cmd fail)\n"); return 0; }
 
-	*siglen = (unsigned int)op.params[2].tmpref.size;
-	if (*siglen == 0) *siglen = req;
+	out_len = (unsigned int)op.params[2].tmpref.size;
+	if (out_len == 0 || out_len > req) out_len = req;
 
-	if (use_local)
-		memcpy(sigret, local_sig, *siglen);
+	memcpy(sigret, local_sig, out_len);	/* sigret >= RSA_size per contract */
+	*siglen = out_len;
 
-	LOG("SIGN -> 1  *siglen=%u\n", *siglen);
+	LOG("SIGN -> 1  *siglen=%u\n", out_len);
 	return 1;
 }
 

@@ -47,9 +47,9 @@ TBox 安全服务在车载终端 SoC 的 ARM TrustZone 安全区域中运行，�
 │  └───────────┼──────────────┘                                             │
 │              ▼                                                             │
 │  ┌───────────────────────────┐  ┌───────────────────────────────────────┐  │
-│  │   ENGINE 层 (REE)          │  │   TA 层 (Secure World)                │  │
+│  │   ENGINE 层 (REE)         │  │   TA 层 (Secure World)                │  │
 │  │                           │  │                                       │  │
-│  │  e_tbox_keystore.so       │  │  tbox_keystore TA                     │  │
+│  │  libengkeystore.so        │  │  tbox_keystore TA                     │  │
 │  │  ├─ RSA 签名/验签/解密     │  │  ├─ 密钥生成/导入/导出/销毁           │  │
 │  │  ├─ TEEC 会话管理          │  │  ├─ PIN 管理 + Lock 机制              │  │
 │  │  └─ 密钥 label → UUID 映射 │  │  ├─ 访问控制 (ACL)                    │  │
@@ -115,7 +115,7 @@ FEK = PRNG() — 每个文件一个随机密钥
 TLS 应用 (SSL_connect)
   → OpenSSL EVP_DigestSign
     → RSA_sign
-      → e_tbox_keystore.so → rsa_sign 回调
+      → libengkeystore.so → rsa_sign 回调
         → TEEC_InvokeCommand(CMD_SIGN, "client-key", digest)
           → SMC #0 (CPU 切换到 Secure World)
             → OP-TEE Core → tbox_keystore TA
@@ -177,7 +177,7 @@ BootROM (片上 ROM, 不可篡改)
 │         └───────┬───────┘                                    │
 │                 ▼                                            │
 │  ┌──────────────────────────────┐                            │
-│  │ e_tbox_keystore.so (ENGINE)  │                            │
+│  │ libengkeystore.so (ENGINE)   │                            │
 │  │ TEEC → SMC → OP-TEE → TA     │                            │
 │  │ 私钥永不出 TEE               │                            │
 │  └──────────────────────────────┘                            │
@@ -288,7 +288,7 @@ Root CA (自签名, root-ca.crt)
 
 | 组件 | 文件 | 用途 |
 |------|------|------|
-| ENGINE 共享库 | `libe_tbox_keystore.so` | 链接到应用进程，注册 OpenSSL ENGINE |
+| ENGINE 共享库 | `libengkeystore.so` | 链接到应用进程，注册 OpenSSL ENGINE |
 | TA 二进制 | `f8e9209a-*.ta` | 部署到 `/lib/optee_armtz/`，在 Secure World 运行 |
 | 公开头文件 | `tbox_keystore_ta.h` | UUID、命令 ID 定义 |
 | CA 工具 | `tbox_keystore` CLI | 命令行密钥管理（灌装、查询、签名等） |
@@ -298,8 +298,8 @@ Root CA (自签名, root-ca.crt)
 ```
 应用
 ├── libssl.so.1.1 + libcrypto.so.1.1   (OpenSSL 1.1.x)
-├── libe_tbox_keystore.so               (ENGINE)
-└── libpaho-mqtt3cs.so                  (MQTTS 场景，带补丁)
+├── libengkeystore.so                   (ENGINE)
+└── libeng-paho-mqtt3cs.so              (MQTTS 场景，带补丁)
 ```
 
 ### 5.2 HTTPS 集成

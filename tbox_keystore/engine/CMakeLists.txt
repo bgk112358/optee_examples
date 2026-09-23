@@ -13,14 +13,15 @@ set(OPENSSL_INCLUDE_DIR /opt/ql-ol-crosstool/sysroots/cortexa7hf-neon-vfpv4-poky
 set(TA_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../ta/include"
     CACHE PATH "TA shared header")
 
+# 产物：libengkeystore.so（目标名 engkeystore）
+add_library(engkeystore SHARED e_tbox_keystore.c)
 include_directories(
     ${TEEC_INCLUDE_DIR}
     ${OPENSSL_INCLUDE_DIR}
     ${TA_INCLUDE_DIR}
 )
 
-add_library(engkeystore SHARED e_tbox_keystore.c)
-target_link_libraries(engkeystore
+target_link_libraries(engkeystore PRIVATE
     crypto
     teec
     dl

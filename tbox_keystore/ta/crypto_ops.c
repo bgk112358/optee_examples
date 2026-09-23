@@ -367,6 +367,158 @@ out_obj:
 	return res;
 }
 
+/* ---- Minimal DER parser (for RSA public key import) ---- */
+
+/*
+ * Read one TLV (tag-length-value) from buf at *off.
+ * Only the subset needed for SubjectPublicKeyInfo is supported:
+ * definite-length, short form (<=127) and long form (<=4 length bytes).
+ * On success, val and val_len point at the VALUE and off is advanced past it.
+ */
+static TEE_Result der_read_tlv(const uint8_t *buf, size_t buf_len, size_t *off,
+			       uint8_t want_tag,
+			       const uint8_t **val, size_t *val_len)
+{
+	size_t p = *off;
+	size_t len;
+	size_t i;
+	uint8_t tag;
+
+	if (p + 2 > buf_len)
+		return TEE_ERROR_BAD_FORMAT;
+
+	tag = buf[p++];
+	if (tag != want_tag) {
+		EMSG("DER: expected tag 0x%02x, got 0x%02x", want_tag, tag);
+		return TEE_ERROR_BAD_FORMAT;
+	}
+
+	len = buf[p++];
+	if (len & 0x80) {			/* long form */
+		size_t n = len & 0x7f;
+
+		if (n == 0 || n > 4 || p + n > buf_len)
+			return TEE_ERROR_BAD_FORMAT;
+		len = 0;
+		for (i = 0; i < n; i++)
+			len = (len << 8) | buf[p++];
+	}
+
+	if (p + len > buf_len)
+		return TEE_ERROR_BAD_FORMAT;
+
+	*val = buf + p;
+	*val_len = len;
+	*off = p + len;
+	return TEE_SUCCESS;
+}
+
+/*
+ * Import an RSA public key from SubjectPublicKeyInfo DER.
+ *
+ *   SubjectPublicKeyInfo ::= SEQUENCE {
+ *       algorithm  AlgorithmIdentifier,     -- SEQUENCE { OID, NULL }
+ *       subjectPublicKey BIT STRING }       -- contains RSAPublicKey
+ *   RSAPublicKey ::= SEQUENCE {
+ *       modulus         INTEGER,
+ *       publicExponent  INTEGER }
+ *
+ * Builds a TEE_TYPE_RSA_PUBLIC_KEY transient object usable by
+ * crypto_rsa_verify().  Used by the SO unlock path to verify the dongle's
+ * signature inside the secure world.
+ */
+TEE_Result rsa_import_pubkey_from_der(const uint8_t *der, size_t der_len,
+				      TEE_ObjectHandle *key)
+{
+	const uint8_t *outer, *alg, *bits, *inner, *mod, *exp;
+	size_t outer_len, alg_len, bits_len, inner_len, mod_len, exp_len;
+	size_t off;
+	uint32_t key_bits;
+	TEE_Attribute attrs[2];
+	TEE_Result res;
+
+	if (!der || !key)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	*key = TEE_HANDLE_NULL;
+
+	/* outer SEQUENCE */
+	off = 0;
+	res = der_read_tlv(der, der_len, &off, 0x30, &outer, &outer_len);
+	if (res != TEE_SUCCESS)
+		return res;
+
+	/* skip AlgorithmIdentifier (we accept any; key type is checked below) */
+	off = 0;
+	res = der_read_tlv(outer, outer_len, &off, 0x30, &alg, &alg_len);
+	if (res != TEE_SUCCESS)
+		return res;
+	(void)alg;
+	(void)alg_len;
+
+	/* BIT STRING: first byte is the number of unused bits (must be 0) */
+	res = der_read_tlv(outer, outer_len, &off, 0x03, &bits, &bits_len);
+	if (res != TEE_SUCCESS)
+		return res;
+	if (bits_len < 2 || bits[0] != 0x00)
+		return TEE_ERROR_BAD_FORMAT;
+	bits++;
+	bits_len--;
+
+	/* RSAPublicKey SEQUENCE */
+	off = 0;
+	res = der_read_tlv(bits, bits_len, &off, 0x30, &inner, &inner_len);
+	if (res != TEE_SUCCESS)
+		return res;
+
+	/* modulus INTEGER, publicExponent INTEGER */
+	off = 0;
+	res = der_read_tlv(inner, inner_len, &off, 0x02, &mod, &mod_len);
+	if (res != TEE_SUCCESS)
+		return res;
+	res = der_read_tlv(inner, inner_len, &off, 0x02, &exp, &exp_len);
+	if (res != TEE_SUCCESS)
+		return res;
+
+	/* DER INTEGERs carry a leading 0x00 when the top bit is set — strip it */
+	if (mod_len > 1 && mod[0] == 0x00) {
+		mod++;
+		mod_len--;
+	}
+	if (exp_len > 1 && exp[0] == 0x00) {
+		exp++;
+		exp_len--;
+	}
+
+	if (mod_len == 0 || exp_len == 0)
+		return TEE_ERROR_BAD_FORMAT;
+
+	key_bits = (uint32_t)(mod_len * 8);
+
+	res = TEE_AllocateTransientObject(TEE_TYPE_RSA_PUBLIC_KEY, key_bits, key);
+	if (res != TEE_SUCCESS) {
+		EMSG("Allocate RSA pubkey object failed: 0x%x", (unsigned int)res);
+		return res;
+	}
+
+	TEE_InitRefAttribute(&attrs[0], TEE_ATTR_RSA_MODULUS,
+			     (void *)mod, mod_len);
+	TEE_InitRefAttribute(&attrs[1], TEE_ATTR_RSA_PUBLIC_EXPONENT,
+			     (void *)exp, exp_len);
+
+	res = TEE_PopulateTransientObject(*key, attrs, 2);
+	if (res != TEE_SUCCESS) {
+		EMSG("Populate RSA pubkey failed: 0x%x", (unsigned int)res);
+		TEE_FreeTransientObject(*key);
+		*key = TEE_HANDLE_NULL;
+		return res;
+	}
+
+	DMSG("RSA pubkey imported: %u bits (mod %zu B, exp %zu B)",
+	     key_bits, mod_len, exp_len);
+	return TEE_SUCCESS;
+}
+
 /* ---- RSA PKCS#1 v1.5 decrypt ---- */
 
 TEE_Result crypto_rsa_decrypt(TEE_ObjectHandle key, uint32_t key_size_bits,

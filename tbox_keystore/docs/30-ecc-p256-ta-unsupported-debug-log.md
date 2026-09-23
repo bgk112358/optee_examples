@@ -6,6 +6,23 @@
 >
 > **结论**：OP-TEE 3.2 不支持 ECDSA transient object，TA 无法在安全世界内做 ECDSA 验签 → 改用 RSA-2048（OP-TEE 3.2 原生支持）。
 
+> ## ⚠️ 实施状态：本文 §2.5 的决策**已落地**
+>
+> 本文记录的是**"为什么这样决策"的历史过程**（ECDSA 撞墙 → 改用 RSA-2048）。
+> 其中 §2.5 选定的方案**现已实施到代码**（以 QEMU 分支为准，真机分支跟随 QEMU）：
+>
+> | 本文当时的目标 | 现在 |
+> |---|---|
+> | dongle 密钥类型改 **RSA-2048** | ✅ `dummy.so` / `remote.so` 都是 RSA-2048 |
+> | 验签移到 **TA 内**（安全世界） | ✅ `so_unlock_confirm()` 内完成 |
+> | TA **原子完成**验签 + 白名单匹配 | ✅ 已实施 → doc 28 的缺口**已闭合** |
+> | 白名单公钥上限放宽（装得下 294 B） | ✅ `SO_DONGLE_PUBKEY_MAX` 256 → **512** |
+>
+> 本文 §1/§2 描述的**故障现象与根因仍然成立**（OP-TEE 3.2 确实不支持 ECDSA
+> transient object，调用即 panic），这部分是有效参考。
+>
+> 实施记录见 [32-dongle-plugin-architecture.md](32-dongle-plugin-architecture.md) §8。
+
 ---
 
 ## 一、问题概述

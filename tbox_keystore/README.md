@@ -27,7 +27,7 @@ tbox_keystore/
 │
 ├── engine/                          ← 【公用 ENGINE 库】
 │   ├── e_tbox_keystore.c            ←   OpenSSL ENGINE 实现
-│   └── CMakeLists.txt               ←   构建 libe_tbox_keystore.so
+│   └── CMakeLists.txt               ←   构建 libengkeystore.so
 │
 ├── examples/                        ← 【测试与演示样例】
 │   ├── engine_test/                 ←   ENGINE 冒烟测试（6 步骤签名/验签）
@@ -68,7 +68,7 @@ export OPENSSL_DIR=/home/test0923/workspace/three_part/openssl/out
 cd engine && mkdir -p build && cd build
 cmake .. -DCMAKE_C_COMPILER=$CC
 make -j
-# 产物: libe_tbox_keystore.so
+# 产物: libengkeystore.so
 ```
 
 ### 2. TA（仅 Makefile）
@@ -149,7 +149,7 @@ cmake .. && make
 cp ta/*.ta /lib/optee_armtz/
 
 # ENGINE
-cp engine/build/libe_tbox_keystore.so /usr/lib/
+cp engine/build/libengkeystore.so /usr/lib/
 
 # 示例程序（按需）
 cp examples/engine_test/build/engine_test         /usr/bin/
@@ -158,7 +158,7 @@ cp examples/mqtts/build/mqtts_sub                 /usr/bin/
 cp examples/mqtts/build/gen_csr                   /usr/bin/
 
 # paho（MQTTS 场景）
-cp three_part/mqtt/out/lib/libpaho-mqtt3cs.so*    /usr/lib/
+cp three_part/mqtt/out/lib/libeng-paho-mqtt3cs.so* /usr/lib/
 ```
 
 ## 架构特点
